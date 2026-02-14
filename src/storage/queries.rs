@@ -130,7 +130,6 @@ pub async fn delete_credential_by_label(pool: &SqlitePool, label: &str) -> Resul
 }
 
 /// Update a credential
-#[allow(dead_code)]
 pub async fn update_credential(
     pool: &SqlitePool,
     label: &str,
