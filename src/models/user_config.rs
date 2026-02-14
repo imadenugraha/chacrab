@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::NaiveDateTime;
 
 /// UserConfig represents the single-user configuration stored in the database.
 /// Contains the salt used for key derivation and optional verification token.
@@ -9,6 +9,6 @@ pub struct UserConfig {
     pub salt: String,
     pub verification_token: Option<String>,
     pub verification_nonce: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
