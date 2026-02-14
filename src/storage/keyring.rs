@@ -5,9 +5,19 @@ use keyring::Entry;
 const SERVICE_NAME: &str = "chacrab";
 const USERNAME: &str = "default";
 
+fn keyring_service_name() -> String {
+    std::env::var("CHACRAB_KEYRING_SERVICE").unwrap_or_else(|_| SERVICE_NAME.to_string())
+}
+
+fn keyring_username() -> String {
+    std::env::var("CHACRAB_KEYRING_USERNAME").unwrap_or_else(|_| USERNAME.to_string())
+}
+
 /// Save the derived session key to OS keyring
 pub fn save_session_key(key: &[u8; 32]) -> Result<()> {
-    let entry = Entry::new(SERVICE_NAME, USERNAME)
+    let service = keyring_service_name();
+    let username = keyring_username();
+    let entry = Entry::new(&service, &username)
         .context("Failed to create keyring entry")?;
 
     let key_base64 = BASE64.encode(key);
@@ -21,7 +31,9 @@ pub fn save_session_key(key: &[u8; 32]) -> Result<()> {
 
 /// Retrieve the session key from OS keyring
 pub fn get_session_key() -> Result<[u8; 32]> {
-    let entry = Entry::new(SERVICE_NAME, USERNAME)
+    let service = keyring_service_name();
+    let username = keyring_username();
+    let entry = Entry::new(&service, &username)
         .context("Failed to create keyring entry")?;
 
     let key_base64 = entry
@@ -44,7 +56,9 @@ pub fn get_session_key() -> Result<[u8; 32]> {
 
 /// Delete the session key from OS keyring
 pub fn delete_session_key() -> Result<()> {
-    let entry = Entry::new(SERVICE_NAME, USERNAME)
+    let service = keyring_service_name();
+    let username = keyring_username();
+    let entry = Entry::new(&service, &username)
         .context("Failed to create keyring entry")?;
 
     entry
@@ -56,7 +70,9 @@ pub fn delete_session_key() -> Result<()> {
 
 /// Check if a session key exists
 pub fn has_session_key() -> bool {
-    if let Ok(entry) = Entry::new(SERVICE_NAME, USERNAME) {
+    let service = keyring_service_name();
+    let username = keyring_username();
+    if let Ok(entry) = Entry::new(&service, &username) {
         entry.get_password().is_ok()
     } else {
         false
