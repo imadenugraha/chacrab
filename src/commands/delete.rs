@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use dialoguer::{Confirm, Input};
 
 use crate::storage::{delete_credential_by_label, get_session_key, Database};
+use crate::ui::is_test_mode;
 
 /// Delete a credential
 pub async fn delete_credential(db: &Database, label: Option<String>) -> Result<()> {
@@ -22,11 +23,15 @@ pub async fn delete_credential(db: &Database, label: Option<String>) -> Result<(
     };
 
     // Confirm deletion
-    let confirmed = Confirm::new()
-        .with_prompt(format!("Delete credential '{}'?", label))
-        .default(false)
-        .interact()
-        .context("Failed to read confirmation")?;
+    let confirmed = if is_test_mode() {
+        true
+    } else {
+        Confirm::new()
+            .with_prompt(format!("Delete credential '{}'?", label))
+            .default(false)
+            .interact()
+            .context("Failed to read confirmation")?
+    };
 
     if !confirmed {
         println!("Cancelled");
