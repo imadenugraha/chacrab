@@ -5,6 +5,7 @@ pub mod init;
 pub mod list;
 pub mod login;
 pub mod logout;
+pub mod update;
 
 pub use add::add_credential;
 pub use delete::delete_credential;
@@ -13,3 +14,4 @@ pub use init::init_vault;
 pub use list::list_credentials;
 pub use login::login;
 pub use logout::logout;
+pub use update::update_credential_cmd;
