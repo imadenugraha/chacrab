@@ -20,7 +20,7 @@ pub async fn list_credentials(db: &Database) -> Result<()> {
     }
 
     println!("\n📝 Stored Credentials ({})\n", credentials.len());
-    println!("{:<30} {:<40} {}", "Label", "URL", "Created");
+    println!("{:<30} {:<40} Created", "Label", "URL");
     println!("{}", "─".repeat(85));
 
     for cred in credentials {
