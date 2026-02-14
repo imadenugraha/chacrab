@@ -3,6 +3,7 @@ use dialoguer::{Input, Password};
 
 use crate::crypto::encrypt_data;
 use crate::storage::{get_session_key, insert_credential, Database};
+use crate::ui::is_test_mode;
 
 /// Add a new credential
 pub async fn add_credential(
@@ -48,6 +49,8 @@ pub async fn add_credential(
 
     let url = if url.is_some() {
         url
+    } else if is_test_mode() {
+        None
     } else {
         let url_input: String = Input::new()
             .with_prompt("URL (optional, press Enter to skip)")
@@ -83,8 +86,11 @@ pub async fn add_credential(
 
     // Handle duplicate label error
     if let Err(e) = result {
-        let error_msg = e.to_string();
-        if error_msg.contains("UNIQUE constraint") || error_msg.contains("unique constraint") {
+        let error_msg = format!("{:#}", e);
+        if error_msg.contains("UNIQUE constraint")
+            || error_msg.contains("unique constraint")
+            || error_msg.contains("duplicate key")
+        {
             anyhow::bail!(
                 "A credential with label '{}' already exists.\n   Use 'chacrab list' to see all labels, or\n   Use 'chacrab delete --label \"{}\"' to remove the existing one.",
                 label, label
