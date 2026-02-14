@@ -1,9 +1,57 @@
 use anyhow::{Context, Result};
 use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use dialoguer::{Input, Select};
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use crate::crypto::decrypt_data;
 use crate::storage::{get_credential_by_label, get_session_key, Database};
+
+fn copy_to_clipboard(text: &str) -> Result<()> {
+    if let Ok(mut ctx) = ClipboardContext::new() {
+        if ctx.set_contents(text.to_string()).is_ok() {
+            return Ok(());
+        }
+    }
+
+    let fallback_commands: Vec<(&str, Vec<&str>)> = vec![
+        ("wl-copy", vec![]),
+        ("xclip", vec!["-selection", "clipboard"]),
+        ("xsel", vec!["--clipboard", "--input"]),
+    ];
+
+    for (program, args) in fallback_commands {
+        let child = Command::new(program)
+            .args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+
+        let mut child = match child {
+            Ok(child) => child,
+            Err(_) => continue,
+        };
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            if stdin.write_all(text.as_bytes()).is_err() {
+                let _ = child.wait();
+                continue;
+            }
+        } else {
+            let _ = child.wait();
+            continue;
+        }
+
+        if child.wait().map(|status| status.success()).unwrap_or(false) {
+            return Ok(());
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Clipboard unavailable. Install one of: wl-copy (Wayland), xclip, or xsel"
+    ))
+}
 
 /// Get and display/copy a credential
 pub async fn get_credential(db: &Database, label: Option<String>) -> Result<()> {
@@ -59,19 +107,11 @@ pub async fn get_credential(db: &Database, label: Option<String>) -> Result<()> 
     match selection {
         0 => {
             // Copy to clipboard
-            match ClipboardContext::new() {
-                Ok(mut ctx) => {
-                    if let Err(e) = ctx.set_contents(password.clone()) {
-                        eprintln!("⚠️  Failed to copy to clipboard: {}", e);
-                        println!("   Password: {}", password);
-                    } else {
-                        println!("✅ Password copied to clipboard");
-                    }
-                }
-                Err(e) => {
-                    eprintln!("⚠️  Clipboard not available: {}", e);
-                    println!("   Password: {}", password);
-                }
+            if let Err(e) = copy_to_clipboard(&password) {
+                eprintln!("⚠️  Failed to copy to clipboard: {}", e);
+                println!("   Password: {}", password);
+            } else {
+                println!("✅ Password copied to clipboard");
             }
         }
         1 => {
