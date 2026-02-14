@@ -25,7 +25,7 @@ pub fn encrypt_data(key: &[u8; 32], plaintext: &str) -> Result<(String, String)>
 
     // Encode both as base64
     let ciphertext_base64 = BASE64.encode(&ciphertext);
-    let nonce_base64 = BASE64.encode(&nonce_bytes);
+    let nonce_base64 = BASE64.encode(nonce_bytes);
 
     Ok((ciphertext_base64, nonce_base64))
 }
