@@ -235,7 +235,7 @@ If you discover a security vulnerability, please email security@example.com inst
 
 ## 📄 License
 
-[Your chosen license here]
+MIT
 
 ## 🙏 Acknowledgments
 
