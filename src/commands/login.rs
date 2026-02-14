@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use dialoguer::Password;
 
+use crate::commands::verify_sentinel_constant_time;
 use crate::crypto::{decrypt_data, derive_key};
 use crate::storage::{get_user_config, has_session_key, save_session_key, Database};
+use crate::ui::{is_test_mode, test_env};
 
 /// Login to unlock the vault
 pub async fn login(db: &Database) -> Result<()> {
@@ -20,10 +22,18 @@ pub async fn login(db: &Database) -> Result<()> {
         .context("Vault not initialized. Please run 'chacrab init' first.")?;
 
     // Prompt for master password
-    let password = Password::new()
-        .with_prompt("Master password")
-        .interact()
-        .context("Failed to read master password")?;
+    let password = if is_test_mode() {
+        test_env("CHACRAB_MASTER_PASSWORD").ok_or_else(|| {
+            anyhow::anyhow!(
+                "CHACRAB_TEST_MODE is enabled but CHACRAB_MASTER_PASSWORD is not set"
+            )
+        })?
+    } else {
+        Password::new()
+            .with_prompt("Master password")
+            .interact()
+            .context("Failed to read master password")?
+    };
 
     // Derive key
     let key = derive_key(&password, &config.salt)
@@ -33,7 +43,7 @@ pub async fn login(db: &Database) -> Result<()> {
     if let (Some(token), Some(nonce)) = (&config.verification_token, &config.verification_nonce) {
         match decrypt_data(&key, token, nonce) {
             Ok(decrypted) => {
-                if decrypted != "CHACRAB_VALID_SESSION" {
+                if !verify_sentinel_constant_time(&decrypted) {
                     anyhow::bail!("Internal error: Invalid verification token");
                 }
                 // Verification successful - password is correct
