@@ -1,72 +1,110 @@
 use anyhow::{Context, Result};
 use argon2::password_hash::SaltString;
 use rand::rngs::OsRng;
-use sqlx::SqlitePool;
+use sqlx::{Postgres, Sqlite};
 
 use crate::models::{Credential, UserConfig};
+use crate::storage::db::DatabasePool;
 
 /// Get user configuration (salt and verification token)
-pub async fn get_user_config(pool: &SqlitePool) -> Result<Option<UserConfig>> {
-    let config = sqlx::query_as::<_, UserConfig>(
-        "SELECT id, salt, verification_token, verification_nonce, created_at, updated_at FROM user_config LIMIT 1"
-    )
-    .fetch_optional(pool)
-    .await
-    .context("Failed to fetch user config")?;
+pub(crate) async fn get_user_config(pool: &DatabasePool) -> Result<Option<UserConfig>> {
+    let config = match pool {
+        DatabasePool::Sqlite(p) => {
+            sqlx::query_as::<Sqlite, UserConfig>(
+                "SELECT id, salt, verification_token, verification_nonce, created_at, updated_at FROM user_config LIMIT 1"
+            )
+            .fetch_optional(p)
+            .await
+            .context("Failed to fetch user config")?
+        }
+        DatabasePool::Postgres(p) => {
+            sqlx::query_as::<Postgres, UserConfig>(
+                "SELECT id, salt, verification_token, verification_nonce, created_at, updated_at FROM user_config LIMIT 1"
+            )
+            .fetch_optional(p)
+            .await
+            .context("Failed to fetch user config")?
+        }
+    };
 
     Ok(config)
 }
 
 /// Create initial user configuration with random salt
-pub async fn create_user_config(pool: &SqlitePool) -> Result<UserConfig> {
+pub(crate) async fn create_user_config(pool: &DatabasePool) -> Result<UserConfig> {
     // Generate random salt
     let salt = SaltString::generate(&mut OsRng);
     let salt_str = salt.as_str();
 
     // Insert into database
-    let result = sqlx::query(
-        "INSERT INTO user_config (salt) VALUES (?)"
-    )
-    .bind(salt_str)
-    .execute(pool)
-    .await
-    .context("Failed to create user config")?;
+    let config = match pool {
+        DatabasePool::Sqlite(p) => {
+            let result = sqlx::query("INSERT INTO user_config (salt) VALUES (?)")
+                .bind(salt_str)
+                .execute(p)
+                .await
+                .context("Failed to create user config")?;
 
-    let id = result.last_insert_rowid();
+            let id = result.last_insert_rowid();
 
-    // Fetch the created config
-    let config = sqlx::query_as::<_, UserConfig>(
-        "SELECT id, salt, verification_token, verification_nonce, created_at, updated_at FROM user_config WHERE id = ?"
-    )
-    .bind(id)
-    .fetch_one(pool)
-    .await
-    .context("Failed to fetch created user config")?;
+            sqlx::query_as::<Sqlite, UserConfig>(
+                "SELECT id, salt, verification_token, verification_nonce, created_at, updated_at FROM user_config WHERE id = ?"
+            )
+            .bind(id)
+            .fetch_one(p)
+            .await
+            .context("Failed to fetch created user config")?
+        }
+        DatabasePool::Postgres(p) => {
+            sqlx::query_as::<Postgres, UserConfig>(
+                "INSERT INTO user_config (salt) VALUES ($1) 
+                 RETURNING id, salt, verification_token, verification_nonce, created_at, updated_at"
+            )
+            .bind(salt_str)
+            .fetch_one(p)
+            .await
+            .context("Failed to create user config")?
+        }
+    };
 
     Ok(config)
 }
 
 /// Update verification token for user config
-pub async fn update_verification_token(
-    pool: &SqlitePool,
+pub(crate) async fn update_verification_token(
+    pool: &DatabasePool,
     verification_token: &str,
     verification_nonce: &str,
 ) -> Result<()> {
-    sqlx::query(
-        "UPDATE user_config SET verification_token = ?, verification_nonce = ?, updated_at = datetime('now')"
-    )
-    .bind(verification_token)
-    .bind(verification_nonce)
-    .execute(pool)
-    .await
-    .context("Failed to update verification token")?;
+    match pool {
+        DatabasePool::Sqlite(p) => {
+            sqlx::query(
+                "UPDATE user_config SET verification_token = ?, verification_nonce = ?, updated_at = datetime('now')"
+            )
+            .bind(verification_token)
+            .bind(verification_nonce)
+            .execute(p)
+            .await
+            .context("Failed to update verification token")?;
+        }
+        DatabasePool::Postgres(p) => {
+            sqlx::query(
+                "UPDATE user_config SET verification_token = $1, verification_nonce = $2, updated_at = CURRENT_TIMESTAMP"
+            )
+            .bind(verification_token)
+            .bind(verification_nonce)
+            .execute(p)
+            .await
+            .context("Failed to update verification token")?;
+        }
+    }
 
     Ok(())
 }
 
 /// Insert a new credential
-pub async fn insert_credential(
-    pool: &SqlitePool,
+pub(crate) async fn insert_credential(
+    pool: &DatabasePool,
     label: &str,
     url: Option<&str>,
     enc_username: &str,
@@ -74,64 +112,127 @@ pub async fn insert_credential(
     nonce_username: &str,
     nonce_password: &str,
 ) -> Result<i64> {
-    let result = sqlx::query(
-        "INSERT INTO credentials (label, url, enc_username, enc_password, nonce_username, nonce_password) 
-         VALUES (?, ?, ?, ?, ?, ?)"
-    )
-    .bind(label)
-    .bind(url)
-    .bind(enc_username)
-    .bind(enc_password)
-    .bind(nonce_username)
-    .bind(nonce_password)
-    .execute(pool)
-    .await
-    .context("Failed to insert credential")?;
+    let id = match pool {
+        DatabasePool::Sqlite(p) => {
+            let result = sqlx::query(
+                "INSERT INTO credentials (label, url, enc_username, enc_password, nonce_username, nonce_password) 
+                 VALUES (?, ?, ?, ?, ?, ?)"
+            )
+            .bind(label)
+            .bind(url)
+            .bind(enc_username)
+            .bind(enc_password)
+            .bind(nonce_username)
+            .bind(nonce_password)
+            .execute(p)
+            .await
+            .context("Failed to insert credential")?;
 
-    Ok(result.last_insert_rowid())
+            result.last_insert_rowid()
+        }
+        DatabasePool::Postgres(p) => {
+            let row: (i64,) = sqlx::query_as(
+                "INSERT INTO credentials (label, url, enc_username, enc_password, nonce_username, nonce_password) 
+                 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
+            )
+            .bind(label)
+            .bind(url)
+            .bind(enc_username)
+            .bind(enc_password)
+            .bind(nonce_username)
+            .bind(nonce_password)
+            .fetch_one(p)
+            .await
+            .context("Failed to insert credential")?;
+
+            row.0
+        }
+    };
+
+    Ok(id)
 }
 
 /// Get a credential by label
-pub async fn get_credential_by_label(pool: &SqlitePool, label: &str) -> Result<Option<Credential>> {
-    let credential = sqlx::query_as::<_, Credential>(
-        "SELECT id, label, url, enc_username, enc_password, nonce_username, nonce_password, created_at, updated_at 
-         FROM credentials WHERE label = ?"
-    )
-    .bind(label)
-    .fetch_optional(pool)
-    .await
-    .context("Failed to fetch credential")?;
+pub(crate) async fn get_credential_by_label(pool: &DatabasePool, label: &str) -> Result<Option<Credential>> {
+    let credential = match pool {
+        DatabasePool::Sqlite(p) => {
+            sqlx::query_as::<Sqlite, Credential>(
+                "SELECT id, label, url, enc_username, enc_password, nonce_username, nonce_password, created_at, updated_at 
+                 FROM credentials WHERE label = ?"
+            )
+            .bind(label)
+            .fetch_optional(p)
+            .await
+            .context("Failed to fetch credential")?
+        }
+        DatabasePool::Postgres(p) => {
+            sqlx::query_as::<Postgres, Credential>(
+                "SELECT id, label, url, enc_username, enc_password, nonce_username, nonce_password, created_at, updated_at 
+                 FROM credentials WHERE label = $1"
+            )
+            .bind(label)
+            .fetch_optional(p)
+            .await
+            .context("Failed to fetch credential")?
+        }
+    };
 
     Ok(credential)
 }
 
 /// List all credentials (returns label, url, created_at only - no decryption needed)
-pub async fn list_all_credentials(pool: &SqlitePool) -> Result<Vec<Credential>> {
-    let credentials = sqlx::query_as::<_, Credential>(
-        "SELECT id, label, url, enc_username, enc_password, nonce_username, nonce_password, created_at, updated_at 
-         FROM credentials ORDER BY label ASC"
-    )
-    .fetch_all(pool)
-    .await
-    .context("Failed to list credentials")?;
+pub(crate) async fn list_all_credentials(pool: &DatabasePool) -> Result<Vec<Credential>> {
+    let credentials = match pool {
+        DatabasePool::Sqlite(p) => {
+            sqlx::query_as::<Sqlite, Credential>(
+                "SELECT id, label, url, enc_username, enc_password, nonce_username, nonce_password, created_at, updated_at 
+                 FROM credentials ORDER BY label ASC"
+            )
+            .fetch_all(p)
+            .await
+            .context("Failed to list credentials")?
+        }
+        DatabasePool::Postgres(p) => {
+            sqlx::query_as::<Postgres, Credential>(
+                "SELECT id, label, url, enc_username, enc_password, nonce_username, nonce_password, created_at, updated_at 
+                 FROM credentials ORDER BY label ASC"
+            )
+            .fetch_all(p)
+            .await
+            .context("Failed to list credentials")?
+        }
+    };
 
     Ok(credentials)
 }
 
 /// Delete a credential by label
-pub async fn delete_credential_by_label(pool: &SqlitePool, label: &str) -> Result<bool> {
-    let result = sqlx::query("DELETE FROM credentials WHERE label = ?")
-        .bind(label)
-        .execute(pool)
-        .await
-        .context("Failed to delete credential")?;
+pub(crate) async fn delete_credential_by_label(pool: &DatabasePool, label: &str) -> Result<bool> {
+    let rows_affected = match pool {
+        DatabasePool::Sqlite(p) => {
+            let result = sqlx::query("DELETE FROM credentials WHERE label = ?")
+                .bind(label)
+                .execute(p)
+                .await
+                .context("Failed to delete credential")?;
+            result.rows_affected()
+        }
+        DatabasePool::Postgres(p) => {
+            let result = sqlx::query("DELETE FROM credentials WHERE label = $1")
+                .bind(label)
+                .execute(p)
+                .await
+                .context("Failed to delete credential")?;
+            result.rows_affected()
+        }
+    };
 
-    Ok(result.rows_affected() > 0)
+    Ok(rows_affected > 0)
 }
 
 /// Update a credential
-pub async fn update_credential(
-    pool: &SqlitePool,
+pub(crate) async fn update_credential(
+    pool: &DatabasePool,
     label: &str,
     url: Option<&str>,
     enc_username: &str,
@@ -139,22 +240,44 @@ pub async fn update_credential(
     nonce_username: &str,
     nonce_password: &str,
 ) -> Result<bool> {
-    let result = sqlx::query(
-        "UPDATE credentials 
-         SET url = ?, enc_username = ?, enc_password = ?, nonce_username = ?, nonce_password = ?, updated_at = datetime('now')
-         WHERE label = ?"
-    )
-    .bind(url)
-    .bind(enc_username)
-    .bind(enc_password)
-    .bind(nonce_username)
-    .bind(nonce_password)
-    .bind(label)
-    .execute(pool)
-    .await
-    .context("Failed to update credential")?;
+    let rows_affected = match pool {
+        DatabasePool::Sqlite(p) => {
+            let result = sqlx::query(
+                "UPDATE credentials 
+                 SET url = ?, enc_username = ?, enc_password = ?, nonce_username = ?, nonce_password = ?, updated_at = datetime('now')
+                 WHERE label = ?"
+            )
+            .bind(url)
+            .bind(enc_username)
+            .bind(enc_password)
+            .bind(nonce_username)
+            .bind(nonce_password)
+            .bind(label)
+            .execute(p)
+            .await
+            .context("Failed to update credential")?;
+            result.rows_affected()
+        }
+        DatabasePool::Postgres(p) => {
+            let result = sqlx::query(
+                "UPDATE credentials 
+                 SET url = $1, enc_username = $2, enc_password = $3, nonce_username = $4, nonce_password = $5, updated_at = CURRENT_TIMESTAMP
+                 WHERE label = $6"
+            )
+            .bind(url)
+            .bind(enc_username)
+            .bind(enc_password)
+            .bind(nonce_username)
+            .bind(nonce_password)
+            .bind(label)
+            .execute(p)
+            .await
+            .context("Failed to update credential")?;
+            result.rows_affected()
+        }
+    };
 
-    Ok(result.rows_affected() > 0)
+    Ok(rows_affected > 0)
 }
 
 #[cfg(test)]
