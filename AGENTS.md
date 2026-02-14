@@ -1,18 +1,18 @@
 # 🦀 ChaCrab Agent Context
 
-Dokumen ini berfungsi sebagai instruksi utama bagi AI Agent dalam mengembangkan dan memelihara ChaCrab, pengelola rahasia berbasis CLI dengan prinsip Zero-Knowledge.
+This document serves as the main instruction guide for AI Agents in developing and maintaining ChaCrab, a CLI-based secret manager with Zero-Knowledge principles.
 
 ---
 
 ## 🎯 Core Principles (Strict)
 
-- **Zero-Knowledge First**: Jangan pernah mengusulkan solusi yang mengirim Master Password atau Plaintext ke server. Enkripsi HARUS terjadi di sisi klien (`src/crypto/`).
+- **Zero-Knowledge First**: Never propose solutions that send Master Password or Plaintext to the server. Encryption MUST occur on the client side (`src/crypto/`).
 
-- **Memory Safety**: Gunakan fitur ownership Rust secara maksimal. Hindari `unsafe` block kecuali sangat diperlukan untuk interaksi OS Keyring.
+- **Memory Safety**: Maximize usage of Rust's ownership features. Avoid `unsafe` blocks except when absolutely necessary for OS Keyring interactions.
 
-- **No Disk Persistence**: Jangan menulis kunci derivasi ke file `.txt` atau log. Gunakan `keyring-rs` untuk sesi.
+- **No Disk Persistence**: Do not write derivation keys to `.txt` files or logs. Use `keyring-rs` for session management.
 
-- **Nonce Uniqueness**: Setiap enkripsi wajib menggunakan nonce baru yang unik (12-byte).
+- **Nonce Uniqueness**: Every encryption must use a new unique nonce (12-byte).
 
 ---
 
@@ -22,47 +22,47 @@ Dokumen ini berfungsi sebagai instruksi utama bagi AI Agent dalam mengembangkan 
 - **CLI**: clap v4 (Derive API)
 - **Crypto**: chacha20poly1305, argon2
 - **Database**: sqlx (PostgreSQL/Supabase)
-- **Storage**: keyring crate untuk manajemen session key di level OS
+- **Storage**: keyring crate for OS-level session key management
 
 ---
 
 ## 📂 Architecture Map
 
-Jika diminta menambahkan fitur, rujuk ke struktur berikut:
+When asked to add features, refer to the following structure:
 
-- **Logika Kripto**: Tambahkan ke `src/crypto/`. Jangan mencampur logika enkripsi di dalam `commands/`.
+- **Crypto Logic**: Add to `src/crypto/`. Do not mix encryption logic inside `commands/`.
 
-- **Query Database**: Gunakan makro `sqlx::query!` di dalam `src/storage/supabase.rs`.
+- **Database Queries**: Use `sqlx::query!` macro inside `src/storage/supabase.rs`.
 
-- **UI/UX**: Gunakan `dialoguer` untuk input interaktif di `src/ui/`.
+- **UI/UX**: Use `dialoguer` for interactive input in `src/ui/`.
 
-- **Schema**: Update `migrations/` jika ada perubahan struktur tabel `credentials` atau `secret_notes`.
+- **Schema**: Update `migrations/` if there are changes to the `credentials` or `secret_notes` table structure.
 
 ---
 
 ## 📋 Task Guidelines
 
-### 1. Menambah Perintah CLI Baru
+### 1. Adding New CLI Commands
 
-- Definisikan sub-command di `src/main.rs` menggunakan clap.
-- Buat modul baru di `src/commands/`.
-- Pastikan fungsi mengembalikan `anyhow::Result<()>` untuk penanganan error yang bersih.
+- Define sub-commands in `src/main.rs` using clap.
+- Create a new module in `src/commands/`.
+- Ensure functions return `anyhow::Result<()>` for clean error handling.
 
-### 2. Penanganan Error
+### 2. Error Handling
 
-- Gunakan crate `anyhow` untuk aplikasi CLI.
-- Berikan pesan error yang informatif kepada pengguna terminal (misal: "Koneksi Supabase gagal, periksa .env").
+- Use the `anyhow` crate for CLI applications.
+- Provide informative error messages to terminal users (e.g., "Supabase connection failed, check .env").
 
-### 3. Keamanan Data
+### 3. Data Security
 
-- Saat menampilkan password, gunakan fitur "copy to clipboard" atau sembunyikan input menggunakan `dialoguer::Password`.
+- When displaying passwords, use "copy to clipboard" feature or hide input using `dialoguer::Password`.
 
 ---
 
 ## ⚠️ Common Pitfalls to Avoid
 
-- **Hardcoding Key**: Jangan pernah menaruh Salt atau Key statis di dalam kode.
+- **Hardcoding Keys**: Never put static Salt or Keys in the code.
 
-- **SQL Injection**: Selalu gunakan parameterized queries dari sqlx.
+- **SQL Injection**: Always use parameterized queries from sqlx.
 
-- **Dependencies**: Jangan menambah crate baru tanpa alasan yang kuat untuk menjaga binary tetap ringan.
+- **Dependencies**: Don't add new crates without strong justification to keep the binary lightweight.
