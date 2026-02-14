@@ -112,10 +112,11 @@ chacrab init
 For power users:
 
 ``bash
-# Set environment variable
+
+*Set environment variable*
 export DATABASE_URL="postgres://username:password@localhost/chacrab"
 
-# Or use command flag
+*Or use command flag*
 chacrab --database "postgres://username:password@localhost/chacrab" init
 ```
 
