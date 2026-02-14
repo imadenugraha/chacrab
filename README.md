@@ -26,7 +26,7 @@ ChaCrab implements **Zero-Knowledge Architecture**:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/chacrab.git
+git clone https://github.com/imadenugraha/chacrab.git
 cd chacrab
 
 # Build and install
