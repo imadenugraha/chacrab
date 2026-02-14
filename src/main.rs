@@ -38,6 +38,16 @@ use storage::init_db;
   chacrab delete --label GitHub
   chacrab rm --label OldAccount    # 'rm' is an alias for delete
 
+  # Export credentials for backup
+    chacrab export --output backup.json
+    chacrab export --format plaintext --output backup-plain.json
+
+  # Import credentials from backup
+  chacrab import --input backup.json
+
+  # Change master password
+  chacrab change-password
+
   # Log out to clear your session
   chacrab logout
 
@@ -45,6 +55,7 @@ NOTES:
   - All credentials are encrypted with ChaCha20-Poly1305
   - Master password is never stored, only derived with Argon2id
   - Session keys are stored securely in your OS keyring
+    - Export supports two formats: encrypted (default) and plaintext
   - For more help on a command: chacrab <command> --help")]
 struct Cli {
     /// Database URL (defaults to sqlite://chacrab.db or DATABASE_URL env var)
@@ -130,6 +141,31 @@ enum Commands {
         #[arg(long)]
         url: Option<String>,
     },
+
+    /// Export credentials to a JSON file
+    #[command(long_about = "Export all credentials to a JSON file for backup.\n\nFormats:\n  - encrypted (default): stores encrypted credentials\n  - plaintext: decrypts credentials and exports readable username/password\n\nFor plaintext export, you'll be prompted for your master password.\nFile permissions are automatically set to 0600 (owner read/write only).\n\nExample:\n  chacrab export\n  chacrab export --output backup.json\n  chacrab export --format plaintext --output backup-plain.json")]
+    Export {
+        /// Output file path (defaults to chacrab-export-<timestamp>.json)
+        #[arg(short, long)]
+        output: Option<std::path::PathBuf>,
+
+        /// Export format: encrypted (default) or plaintext
+        #[arg(short, long, default_value = "encrypted")]
+        format: String,
+    },
+
+    /// Import credentials from a JSON file
+    #[command(long_about = "Import credentials from a ChaCrab export file.\n\nHandles duplicate labels with interactive prompts:\n  - Skip: Don't import duplicates\n  - Overwrite: Replace existing with imported\n  - Rename: Add suffix to imported label\n\nExample:\n  chacrab import --input backup.json")]
+    Import {
+        /// Input file path
+        #[arg(short, long)]
+        input: std::path::PathBuf,
+    },
+
+    /// Change master password
+    #[command(name = "change-password")]
+    #[command(long_about = "Change your master password and re-encrypt all credentials.\n\n⚠️  CRITICAL OPERATION:\n  - Creates a backup BEFORE proceeding (highly recommended)\n  - Verifies current password\n  - Validates new password strength\n  - Re-encrypts ALL credentials with new key\n  - Updates salt and session\n\nThis operation cannot be undone. If the process is interrupted,\nyour vault may be left in an inconsistent state.\n\nExample:\n  chacrab change-password")]
+    ChangePassword,
 }
 
 #[tokio::main]
@@ -162,6 +198,9 @@ async fn main() -> Result<()> {
             password,
             url,
         } => commands::update_credential_cmd(&db, label, username, password, url).await?,
+        Commands::Export { output, format } => commands::export_credentials(&db, output, &format).await?,
+        Commands::Import { input } => commands::import_credentials(&db, input).await?,
+        Commands::ChangePassword => commands::change_password(&db).await?,
     }
 
     Ok(())
