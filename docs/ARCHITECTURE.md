@@ -1,111 +1,111 @@
 # 🏗️ ChaCrab: Technical Architecture
 
-Dokumen ini menjelaskan desain sistem, model keamanan, dan skema data yang digunakan dalam ChaCrab.
+This document explains the system design, security model, and data schema used in ChaCrab.
 
 ---
 
 ## 🛡️ Security Model (Zero-Knowledge)
 
-ChaCrab menggunakan prinsip **Zero-Knowledge Architecture**. Artinya, server (Supabase) tidak pernah mengetahui _Master Password_ pengguna atau isi data yang disimpan.
+ChaCrab uses the **Zero-Knowledge Architecture** principle. This means the server (Supabase) never knows the user's _Master Password_ or the contents of stored data.
 
 ### 1. Key Derivation (Argon2id)
 
-Sebelum enkripsi dilakukan, _Master Password_ diubah menjadi kunci kriptografi yang kuat.
+Before encryption is performed, the _Master Password_ is converted into a strong cryptographic key.
 
 - **Input**: Master Password + Unique User Salt
-- **Algorithm**: Argon2id (Konfigurasi: Memory 64MB, Iterations 3, Parallelism 4)
+- **Algorithm**: Argon2id (Configuration: Memory 64MB, Iterations 3, Parallelism 4)
 - **Output**: 32-byte _Derived Key_
 
 ### 2. Authenticated Encryption (ChaCha20-Poly1305)
 
-Kami menggunakan _Stream Cipher_ modern yang sangat cepat dan aman.
+We use a modern _Stream Cipher_ that is very fast and secure.
 
-- Setiap entri data menggunakan **Nonce** (12-byte) unik yang dihasilkan secara acak melalui `OsRng`
-- Data yang dienkripsi mencakup: Username, Password, dan Isi Catatan Rahasia
+- Each data entry uses a unique **Nonce** (12-byte) randomly generated via `OsRng`
+- Encrypted data includes: Username, Password, and Secret Note Contents
 
 ---
     
 
 ## 🔄 Data Flow: Create New Credential
 
-1. **User Input**: Pengguna memasukkan label, username, dan password via CLI
+1. **User Input**: User enters label, username, and password via CLI
 
 2. **Encryption**:
-   - Sistem mengambil _Derived Key_ dari memory/OS Keyring
-   - Menghasilkan _Nonce_ acak
-   - Melakukan enkripsi lokal pada username & password
+   - System retrieves _Derived Key_ from memory/OS Keyring
+   - Generates random _Nonce_
+   - Performs local encryption on username & password
 
-3. **Transmission**: Data terenkripsi dikirim ke Supabase melalui HTTPS
+3. **Transmission**: Encrypted data is sent to Supabase via HTTPS
 
-4. **Storage**: Supabase menyimpan _Ciphertext_ dan _Nonce_
+4. **Storage**: Supabase stores _Ciphertext_ and _Nonce_
 
 ---
     
 
 ## 🗄️ Database Schema
 
-ChaCrab menggunakan PostgreSQL di atas platform Supabase. Berikut adalah struktur tabel utamanya:
+ChaCrab uses PostgreSQL on the Supabase platform. Below is the main table structure:
 
 ### 1. Table: `user_configs`
 
-Menyimpan informasi dasar untuk proses login dan derivasi kunci.
+Stores basic information for the login process and key derivation.
 
 | Column     | Type        | Description                        |
 |------------|-------------|------------------------------------|
-| user_id    | UUID (PK)   | Relasi ke auth.users Supabase      |
-| salt       | TEXT        | Salt unik per user untuk Argon2id  |
-| updated_at | TIMESTAMPTZ | Waktu perubahan terakhir           |
+| user_id    | UUID (PK)   | Relation to auth.users Supabase    |
+| salt       | TEXT        | Unique salt per user for Argon2id  |
+| updated_at | TIMESTAMPTZ | Last update timestamp              |
 
 ### 2. Table: `credentials`
 
-Menyimpan data akun yang terenkripsi.
+Stores encrypted account data.
 
 | Column       | Type      | Description                          |
 |--------------|-----------|--------------------------------------|
-| id           | UUID (PK) | Unique ID entri                      |
-| user_id      | UUID (FK) | Pemilik data (dengan RLS aktif)      |
-| label        | TEXT      | Nama aplikasi/layanan (Plaintext)    |
-| url          | TEXT      | URL layanan (Plaintext)              |
-| enc_username | TEXT      | Username terenkripsi (Base64)        |
-| enc_password | TEXT      | Password terenkripsi (Base64)        |
-| nonce        | TEXT      | Nonce unik untuk baris ini (Base64)  |
+| id           | UUID (PK) | Unique entry ID                      |
+| user_id      | UUID (FK) | Data owner (with RLS enabled)        |
+| label        | TEXT      | Application/service name (Plaintext) |
+| url          | TEXT      | Service URL (Plaintext)              |
+| enc_username | TEXT      | Encrypted username (Base64)          |
+| enc_password | TEXT      | Encrypted password (Base64)          |
+| nonce        | TEXT      | Unique nonce for this row (Base64)   |
 
 ### 3. Table: `secret_notes`
 
-Menyimpan catatan teks panjang yang terenkripsi.
+Stores encrypted long-form text notes.
 
 | Column      | Type      | Description                             |
 |-------------|-----------|-----------------------------------------|
-| id          | UUID (PK) | Unique ID entri                         |
-| title       | TEXT      | Judul catatan (Plaintext)               |
-| enc_content | TEXT      | Isi catatan terenkripsi (Base64)        |
-| nonce       | TEXT      | Nonce unik untuk baris ini (Base64)     |
-| tags        | TEXT[]    | Array label untuk pengelompokan (Plaintext) |
+| id          | UUID (PK) | Unique entry ID                         |
+| title       | TEXT      | Note title (Plaintext)                  |
+| enc_content | TEXT      | Encrypted note content (Base64)         |
+| nonce       | TEXT      | Unique nonce for this row (Base64)      |
+| tags        | TEXT[]    | Label array for grouping (Plaintext)    |
 
 ---
 
 ## 🔑 Session Management (OS Keyring)
 
-Untuk menjaga kenyamanan tanpa mengorbankan keamanan, ChaCrab menggunakan **OS-level secure storage**:
+To maintain convenience without sacrificing security, ChaCrab uses **OS-level secure storage**:
 
 - **macOS**: Keychain Access
-- **Linux**: Secret Service (libsecret) atau KWallet
+- **Linux**: Secret Service (libsecret) or KWallet
 - **Windows**: Credential Manager
 
-_Derived Key_ disimpan di sini setelah login berhasil dan dihapus secara otomatis saat pengguna menjalankan perintah logout.
+The _Derived Key_ is stored here after successful login and automatically deleted when the user runs the logout command.
 
 ---
 
 ## 📂 Project Structure
 
-Struktur kode diatur secara modular untuk memudahkan pengujian unit:
+The code structure is organized modularly to facilitate unit testing:
 
 ```plaintext
 src/
-├── main.rs          # Handler argumen CLI (Clap)
-├── crypto/          # Logika murni Argon2 & ChaCha20
-├── storage/         # Implementasi SQLx dan koneksi Supabase
-├── commands/        # Logika bisnis per perintah (Add, Get, Ls)
-├── models/          # Struct data (Structs for DB rows)
-└── ui/              # Formatting output terminal & prompts
+├── main.rs          # CLI argument handler (Clap)
+├── crypto/          # Pure Argon2 & ChaCha20 logic
+├── storage/         # SQLx implementation and Supabase connection
+├── commands/        # Business logic per command (Add, Get, Ls)
+├── models/          # Data structures (Structs for DB rows)
+└── ui/              # Terminal output formatting & prompts
 ```
