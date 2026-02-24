@@ -463,6 +463,31 @@ async fn run_sync(
     success("Sync complete.", options);
     system(&format!("Items uploaded: {}", report.uploaded), options);
     system(&format!("Items downloaded: {}", report.downloaded), options);
+    if report.conflicts > 0 {
+        let short_ids = report
+            .conflict_ids
+            .iter()
+            .take(5)
+            .map(|id| id.to_string().chars().take(8).collect::<String>())
+            .collect::<Vec<_>>()
+            .join(", ");
+        warning(
+            &format!(
+                "⚠️ Sync conflicts resolved: {} ({short_ids})",
+                report.conflicts
+            ),
+            options,
+        );
+    }
+    if report.replay_blocked > 0 {
+        warning(
+            &format!(
+                "⚠️ Replay-protection blocks: {} stale remote update(s) ignored",
+                report.replay_blocked
+            ),
+            options,
+        );
+    }
     Ok(())
 }
 
@@ -471,10 +496,74 @@ async fn sync_remote_repo() -> ChacrabResult<AppRepository> {
         .map_err(|_| ChacrabError::Config("set CHACRAB_SYNC_BACKEND for sync".to_owned()))?;
     let database_url = std::env::var("CHACRAB_SYNC_DATABASE_URL")
         .map_err(|_| ChacrabError::Config("set CHACRAB_SYNC_DATABASE_URL for sync".to_owned()))?;
+    validate_sync_remote_config(&backend, &database_url)?;
 
     let repo = AppRepository::connect(&backend, &database_url).await?;
     repo.init().await?;
     Ok(repo)
+}
+
+fn validate_sync_remote_config(backend: &str, database_url: &str) -> ChacrabResult<()> {
+    let normalized_backend = backend.trim().to_ascii_lowercase();
+    let require_tls = std::env::var("CHACRAB_SYNC_REQUIRE_TLS")
+        .map(|value| value != "0" && !value.eq_ignore_ascii_case("false"))
+        .unwrap_or(true);
+
+    match normalized_backend.as_str() {
+        "sqlite" => {}
+        "postgres" => {
+            let lowered = database_url.to_ascii_lowercase();
+            if !(lowered.starts_with("postgres://") || lowered.starts_with("postgresql://")) {
+                return Err(ChacrabError::Config(
+                    "sync postgres URL must start with postgres:// or postgresql://".to_owned(),
+                ));
+            }
+            if require_tls
+                && !(lowered.contains("sslmode=require")
+                    || lowered.contains("sslmode=verify-ca")
+                    || lowered.contains("sslmode=verify-full"))
+            {
+                return Err(ChacrabError::Config(
+                    "sync postgres URL must enable TLS (sslmode=require|verify-ca|verify-full)"
+                        .to_owned(),
+                ));
+            }
+        }
+        "mongo" => {
+            let lowered = database_url.to_ascii_lowercase();
+            if !(lowered.starts_with("mongodb://") || lowered.starts_with("mongodb+srv://")) {
+                return Err(ChacrabError::Config(
+                    "sync mongo URL must start with mongodb:// or mongodb+srv://".to_owned(),
+                ));
+            }
+            if require_tls
+                && lowered.starts_with("mongodb://")
+                && !(lowered.contains("tls=true") || lowered.contains("ssl=true"))
+            {
+                return Err(ChacrabError::Config(
+                    "sync mongo URL must enable TLS (tls=true)".to_owned(),
+                ));
+            }
+        }
+        _ => {
+            return Err(ChacrabError::Config(
+                "sync backend must be sqlite, postgres, or mongo".to_owned(),
+            ));
+        }
+    }
+
+    if normalized_backend != "sqlite" {
+        let token = std::env::var("CHACRAB_SYNC_AUTH_TOKEN").map_err(|_| {
+            ChacrabError::Config("set CHACRAB_SYNC_AUTH_TOKEN for remote sync auth".to_owned())
+        })?;
+        if token.trim().len() < 16 {
+            return Err(ChacrabError::Config(
+                "CHACRAB_SYNC_AUTH_TOKEN must be at least 16 characters".to_owned(),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 async fn run_backup_export(
