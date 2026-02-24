@@ -2,9 +2,9 @@ use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use futures_util::TryStreamExt;
 use mongodb::{
-    bson::{self, doc, Binary, Bson, DateTime as BsonDateTime, Document},
-    options::{ClientOptions, IndexOptions},
     Client, Collection, IndexModel,
+    bson::{self, Binary, Bson, DateTime as BsonDateTime, Document, doc},
+    options::{ClientOptions, IndexOptions},
 };
 use uuid::Uuid;
 
@@ -72,9 +72,7 @@ impl MongoRepository {
     }
 
     fn from_document(document: Document) -> ChacrabResult<VaultItem> {
-        let id_text = document
-            .get_str("id")
-            .map_err(|_| ChacrabError::Storage)?;
+        let id_text = document.get_str("id").map_err(|_| ChacrabError::Storage)?;
         let item_type_text = document
             .get_str("item_type")
             .map_err(|_| ChacrabError::Storage)?;
@@ -203,13 +201,16 @@ impl VaultRepository for MongoRepository {
                         .to_owned(),
                     argon2_m_cost: doc
                         .get_i32("argon2_m_cost")
-                        .map_err(|_| ChacrabError::Storage)? as u32,
+                        .map_err(|_| ChacrabError::Storage)?
+                        as u32,
                     argon2_t_cost: doc
                         .get_i32("argon2_t_cost")
-                        .map_err(|_| ChacrabError::Storage)? as u32,
+                        .map_err(|_| ChacrabError::Storage)?
+                        as u32,
                     argon2_p_cost: doc
                         .get_i32("argon2_p_cost")
-                        .map_err(|_| ChacrabError::Storage)? as u32,
+                        .map_err(|_| ChacrabError::Storage)?
+                        as u32,
                 })
             })
             .transpose()

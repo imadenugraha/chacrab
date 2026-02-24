@@ -1,7 +1,10 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::core::{errors::ChacrabResult, models::{AuthRecord, VaultItem}};
+use crate::core::{
+    errors::ChacrabResult,
+    models::{AuthRecord, VaultItem},
+};
 
 #[async_trait]
 pub trait VaultRepository: Send + Sync {

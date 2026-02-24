@@ -7,10 +7,8 @@ use crate::{
         models::{AuthRecord, VaultItem},
     },
     storage::{
-        mongo::MongoRepository,
-        postgres::PostgresRepository,
+        mongo::MongoRepository, postgres::PostgresRepository, sqlite::SqliteRepository,
         r#trait::VaultRepository,
-        sqlite::SqliteRepository,
     },
 };
 
@@ -25,7 +23,9 @@ impl AppRepository {
     pub async fn connect(backend: &str, database_url: &str) -> ChacrabResult<Self> {
         match backend {
             "sqlite" => Ok(Self::Sqlite(SqliteRepository::connect(database_url).await?)),
-            "postgres" => Ok(Self::Postgres(PostgresRepository::connect(database_url).await?)),
+            "postgres" => Ok(Self::Postgres(
+                PostgresRepository::connect(database_url).await?,
+            )),
             "mongo" => Ok(Self::Mongo(MongoRepository::connect(database_url).await?)),
             other => Err(ChacrabError::UnsupportedBackend(other.to_owned())),
         }
