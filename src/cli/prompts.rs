@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use dialoguer::{theme::ColorfulTheme, Confirm, Editor, Input, Select};
+use dialoguer::{Confirm, Editor, Input, Select, theme::ColorfulTheme};
 use secrecy::{ExposeSecret, SecretString};
 use zeroize::Zeroize;
 
@@ -24,14 +24,19 @@ pub fn secure_password_prompt(prompt: &str) -> ChacrabResult<SecretString> {
     Ok(SecretString::new(password.into_boxed_str()))
 }
 
-pub fn secure_password_with_confirmation(prompt: &str, confirm_prompt: &str) -> ChacrabResult<SecretString> {
+pub fn secure_password_with_confirmation(
+    prompt: &str,
+    confirm_prompt: &str,
+) -> ChacrabResult<SecretString> {
     let first = secure_password_prompt(prompt)?;
     let second = secure_password_prompt(confirm_prompt)?;
     let mut second_plain = second.expose_secret().to_owned();
 
     if first.expose_secret() != second_plain {
         second_plain.zeroize();
-        return Err(ChacrabError::Config("password confirmation did not match".to_owned()));
+        return Err(ChacrabError::Config(
+            "password confirmation did not match".to_owned(),
+        ));
     }
 
     second_plain.zeroize();

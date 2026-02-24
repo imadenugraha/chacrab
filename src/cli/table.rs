@@ -1,7 +1,4 @@
-use crate::{
-    cli::display::short_id,
-    core::models::VaultItem,
-};
+use crate::{cli::display::short_id, core::models::VaultItem};
 
 pub fn print_list_table(items: &[VaultItem]) {
     println!("ID        TYPE       TITLE                UPDATED");
@@ -22,5 +19,9 @@ fn truncate(value: &str, max: usize) -> String {
     if value.chars().count() <= max {
         return value.to_owned();
     }
-    value.chars().take(max.saturating_sub(1)).collect::<String>() + "…"
+    value
+        .chars()
+        .take(max.saturating_sub(1))
+        .collect::<String>()
+        + "…"
 }
