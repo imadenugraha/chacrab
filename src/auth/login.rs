@@ -33,7 +33,10 @@ impl SessionKeyStore for OsSessionKeyStore {
     }
 }
 
-pub async fn register<R: VaultRepository>(repo: &R, master_password: SecretString) -> ChacrabResult<()> {
+pub async fn register<R: VaultRepository>(
+    repo: &R,
+    master_password: SecretString,
+) -> ChacrabResult<()> {
     let (material, mut derived) = crypto::create_registration_material(&master_password)?;
 
     let auth = AuthRecord {
@@ -49,7 +52,10 @@ pub async fn register<R: VaultRepository>(repo: &R, master_password: SecretStrin
     Ok(())
 }
 
-pub async fn login<R: VaultRepository>(repo: &R, master_password: SecretString) -> ChacrabResult<()> {
+pub async fn login<R: VaultRepository>(
+    repo: &R,
+    master_password: SecretString,
+) -> ChacrabResult<()> {
     let key_store = OsSessionKeyStore;
     login_with_store(repo, master_password, &key_store).await
 }
@@ -64,7 +70,14 @@ pub(crate) async fn login_with_store<R: VaultRepository, S: SessionKeyStore>(
         .await?
         .ok_or_else(|| ChacrabError::Config("vault not initialized; run init".to_owned()))?;
 
-    let mut derived = crypto::verify_password(&master_password, &auth.salt, &auth.verifier)?;
+    let mut derived = crypto::verify_password_with_params(
+        &master_password,
+        &auth.salt,
+        &auth.verifier,
+        auth.argon2_m_cost,
+        auth.argon2_t_cost,
+        auth.argon2_p_cost,
+    )?;
     key_store.store(&derived)?;
     derived.zeroize();
     Ok(())
@@ -94,8 +107,12 @@ pub(crate) fn current_session_key_with_store<S: SessionKeyStore>(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::{Arc, Mutex}};
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
 
+    use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version, password_hash::SaltString};
     use async_trait::async_trait;
 
     use crate::{
@@ -106,7 +123,10 @@ mod tests {
         storage::r#trait::VaultRepository,
     };
 
-    use super::{current_session_key_with_store, login_with_store, logout_with_store, register, SessionKeyStore};
+    use super::{
+        SessionKeyStore, current_session_key_with_store, login_with_store, logout_with_store,
+        register,
+    };
     use secrecy::SecretString;
     use uuid::Uuid;
 
@@ -123,12 +143,21 @@ mod tests {
         }
 
         async fn upsert_item(&self, item: &VaultItem) -> ChacrabResult<()> {
-            self.items.lock().expect("poisoned").insert(item.id, item.clone());
+            self.items
+                .lock()
+                .expect("poisoned")
+                .insert(item.id, item.clone());
             Ok(())
         }
 
         async fn list_items(&self) -> ChacrabResult<Vec<VaultItem>> {
-            Ok(self.items.lock().expect("poisoned").values().cloned().collect())
+            Ok(self
+                .items
+                .lock()
+                .expect("poisoned")
+                .values()
+                .cloned()
+                .collect())
         }
 
         async fn get_item(&self, id: Uuid) -> ChacrabResult<VaultItem> {
@@ -200,5 +229,54 @@ mod tests {
 
         logout_with_store(&store).expect("logout should succeed");
         assert!(current_session_key_with_store(&store).is_err());
+    }
+
+    #[tokio::test]
+    async fn login_honors_stored_argon2_parameters() {
+        let repo = MemoryRepo::default();
+        let store = MemorySessionStore::default();
+        let master_password = SecretString::new("MasterPass12!".to_owned().into_boxed_str());
+        let salt = crate::core::crypto::generate_salt();
+        let custom_m = 32_768;
+        let custom_t = 4;
+        let custom_p = 1;
+
+        let derived = crate::core::crypto::derive_key_with_params(
+            &master_password,
+            &salt,
+            custom_m,
+            custom_t,
+            custom_p,
+        )
+        .expect("derive with custom argon2 params");
+
+        let params = Params::new(
+            custom_m,
+            custom_t,
+            custom_p,
+            Some(crate::core::crypto::KEY_SIZE),
+        )
+        .expect("argon2 params");
+        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+        let salt_string = SaltString::from_b64(&salt).expect("salt decode");
+        let verifier = argon2
+            .hash_password(&derived, &salt_string)
+            .expect("verifier")
+            .to_string();
+
+        repo.set_auth_record(&AuthRecord {
+            salt,
+            verifier,
+            argon2_m_cost: custom_m,
+            argon2_t_cost: custom_t,
+            argon2_p_cost: custom_p,
+        })
+        .await
+        .expect("set auth");
+
+        login_with_store(&repo, master_password, &store)
+            .await
+            .expect("login should use stored argon2 params");
+        assert!(current_session_key_with_store(&store).is_ok());
     }
 }
