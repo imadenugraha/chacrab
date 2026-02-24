@@ -38,12 +38,12 @@
 
 ## Priority 3 - Sync Engine
 
-- [ ] Define remote sync contract/API for encrypted blob transfer.
-- [ ] Implement remote adapter with auth and transport hardening.
-- [ ] Add deterministic conflict resolution policy for ties and tombstones.
-- [ ] Add sync tests for create/update/delete conflicts.
-- [ ] Add replay-protection/version checks for remote updates.
-- [ ] Add conflict reporting in CLI (`⚠️` summary with short IDs only).
+- [x] Define remote sync contract/API for encrypted blob transfer.
+- [x] Implement remote adapter with auth and transport hardening.
+- [x] Add deterministic conflict resolution policy for ties and tombstones.
+- [x] Add sync tests for create/update/delete conflicts.
+- [x] Add replay-protection/version checks for remote updates.
+- [x] Add conflict reporting in CLI (`⚠️` summary with short IDs only).
 
 ## Priority 4 - UX and Config
 
@@ -52,6 +52,7 @@
 - [ ] Add command to rotate master password (re-encrypt all records).
 - [ ] Add optional non-interactive flags for automation-safe secret input via stdin.
 - [ ] Add clipboard disable toggle in config for hardened environments.
+- [ ] Add edit command for modifying existing records with secure input and audit trail.
 
 ## Priority 5 - Operational
 
