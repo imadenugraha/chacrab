@@ -1,5 +1,11 @@
-use argon2::{password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString}, Algorithm, Argon2, Params, Version};
-use chacha20poly1305::{aead::{Aead, KeyInit}, ChaCha20Poly1305, Key, Nonce};
+use argon2::{
+    Algorithm, Argon2, Params, Version,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
+};
+use chacha20poly1305::{
+    ChaCha20Poly1305, Key, Nonce,
+    aead::{Aead, KeyInit},
+};
 use rand::RngCore;
 use secrecy::{ExposeSecret, SecretString};
 use zeroize::Zeroize;
@@ -25,10 +31,18 @@ pub struct RegistrationMaterial {
     pub verifier: String,
 }
 
-fn argon2_instance() -> ChacrabResult<Argon2<'static>> {
-    let params = Params::new(ARGON2_M_COST, ARGON2_T_COST, ARGON2_P_COST, Some(KEY_SIZE))
+fn argon2_instance_with_params(
+    m_cost: u32,
+    t_cost: u32,
+    p_cost: u32,
+) -> ChacrabResult<Argon2<'static>> {
+    let params = Params::new(m_cost, t_cost, p_cost, Some(KEY_SIZE))
         .map_err(|_| ChacrabError::Config("invalid argon2 parameters".to_owned()))?;
     Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, params))
+}
+
+fn argon2_instance() -> ChacrabResult<Argon2<'static>> {
+    argon2_instance_with_params(ARGON2_M_COST, ARGON2_T_COST, ARGON2_P_COST)
 }
 
 pub fn generate_salt() -> String {
@@ -36,16 +50,38 @@ pub fn generate_salt() -> String {
 }
 
 pub fn derive_key(master_password: &SecretString, salt_b64: &str) -> ChacrabResult<[u8; KEY_SIZE]> {
+    derive_key_with_params(
+        master_password,
+        salt_b64,
+        ARGON2_M_COST,
+        ARGON2_T_COST,
+        ARGON2_P_COST,
+    )
+}
+
+pub fn derive_key_with_params(
+    master_password: &SecretString,
+    salt_b64: &str,
+    m_cost: u32,
+    t_cost: u32,
+    p_cost: u32,
+) -> ChacrabResult<[u8; KEY_SIZE]> {
     let _ = SaltString::from_b64(salt_b64).map_err(|_| ChacrabError::InvalidCredentials)?;
-    let argon2 = argon2_instance()?;
+    let argon2 = argon2_instance_with_params(m_cost, t_cost, p_cost)?;
     let mut out = [0u8; KEY_SIZE];
     argon2
-        .hash_password_into(master_password.expose_secret().as_bytes(), salt_b64.as_bytes(), &mut out)
+        .hash_password_into(
+            master_password.expose_secret().as_bytes(),
+            salt_b64.as_bytes(),
+            &mut out,
+        )
         .map_err(|_| ChacrabError::InvalidCredentials)?;
     Ok(out)
 }
 
-pub fn create_registration_material(master_password: &SecretString) -> ChacrabResult<(RegistrationMaterial, [u8; KEY_SIZE])> {
+pub fn create_registration_material(
+    master_password: &SecretString,
+) -> ChacrabResult<(RegistrationMaterial, [u8; KEY_SIZE])> {
     let salt = generate_salt();
     let derived = derive_key(master_password, &salt)?;
     let argon2 = argon2_instance()?;
@@ -64,11 +100,35 @@ pub fn create_registration_material(master_password: &SecretString) -> ChacrabRe
     ))
 }
 
-pub fn verify_password(master_password: &SecretString, salt_b64: &str, verifier: &str) -> ChacrabResult<[u8; KEY_SIZE]> {
-    let derived = derive_key(master_password, salt_b64)?;
+pub fn verify_password(
+    master_password: &SecretString,
+    salt_b64: &str,
+    verifier: &str,
+) -> ChacrabResult<[u8; KEY_SIZE]> {
+    verify_password_with_params(
+        master_password,
+        salt_b64,
+        verifier,
+        ARGON2_M_COST,
+        ARGON2_T_COST,
+        ARGON2_P_COST,
+    )
+}
+
+pub fn verify_password_with_params(
+    master_password: &SecretString,
+    salt_b64: &str,
+    verifier: &str,
+    m_cost: u32,
+    t_cost: u32,
+    p_cost: u32,
+) -> ChacrabResult<[u8; KEY_SIZE]> {
+    let derived = derive_key_with_params(master_password, salt_b64, m_cost, t_cost, p_cost)?;
     let parsed = PasswordHash::new(verifier).map_err(|_| ChacrabError::InvalidCredentials)?;
-    let argon2 = argon2_instance()?;
-    argon2.verify_password(&derived, &parsed).map_err(|_| ChacrabError::InvalidCredentials)?;
+    let argon2 = argon2_instance_with_params(m_cost, t_cost, p_cost)?;
+    argon2
+        .verify_password(&derived, &parsed)
+        .map_err(|_| ChacrabError::InvalidCredentials)?;
     Ok(derived)
 }
 
@@ -84,7 +144,11 @@ pub fn encrypt(key_bytes: &[u8; KEY_SIZE], plaintext: &[u8]) -> ChacrabResult<Ci
     Ok(CipherBlob { ciphertext, nonce })
 }
 
-pub fn decrypt(key_bytes: &[u8; KEY_SIZE], nonce: &[u8; NONCE_SIZE], ciphertext: &[u8]) -> ChacrabResult<Vec<u8>> {
+pub fn decrypt(
+    key_bytes: &[u8; KEY_SIZE],
+    nonce: &[u8; NONCE_SIZE],
+    ciphertext: &[u8],
+) -> ChacrabResult<Vec<u8>> {
     let key = Key::from_slice(key_bytes);
     let cipher = ChaCha20Poly1305::new(key);
     let plaintext = cipher.decrypt(Nonce::from_slice(nonce), ciphertext)?;
@@ -100,7 +164,7 @@ mod tests {
     use secrecy::SecretString;
 
     use super::{
-        create_registration_material, decrypt, derive_key, encrypt, verify_password, KEY_SIZE,
+        KEY_SIZE, create_registration_material, decrypt, derive_key, encrypt, verify_password,
     };
 
     #[test]
@@ -158,6 +222,9 @@ mod tests {
         let first = encrypt(&key, plaintext).expect("first encryption");
         let second = encrypt(&key, plaintext).expect("second encryption");
 
-        assert_ne!(first.nonce, second.nonce, "nonces should be randomly generated");
+        assert_ne!(
+            first.nonce, second.nonce,
+            "nonces should be randomly generated"
+        );
     }
 }

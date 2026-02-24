@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use chacrab::{
     core::{errors::ChacrabError, errors::ChacrabResult},
-    storage::{r#trait::VaultRepository, sqlite::SqliteRepository},
+    storage::{sqlite::SqliteRepository, r#trait::VaultRepository},
 };
 
 fn temp_db_url() -> (String, PathBuf) {

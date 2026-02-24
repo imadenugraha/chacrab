@@ -2,7 +2,7 @@ use chrono::Utc;
 
 use crate::{
     auth::login,
-    core::{errors::{ChacrabError, ChacrabResult}},
+    core::errors::{ChacrabError, ChacrabResult},
 };
 
 const SESSION_META_SERVICE: &str = "chacrab";

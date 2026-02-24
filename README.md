@@ -1,17 +1,17 @@
-# Chacrab
+# 🔐 Chacrab
 
 Security-first CLI password manager with zero-knowledge design, client-side encryption, and offline-first operation.
 
-## Highlights
+## ✨ Highlights
 
-- Argon2id key derivation (`m=65536`, `t=3`, `p=1`)
-- ChaCha20-Poly1305 encryption with random 96-bit nonce
-- Encrypted-at-rest vault storage for SQLite, PostgreSQL, and MongoDB
-- OS keyring-backed session key handling (fail-closed behavior)
-- Secure CLI UX: hidden prompts, no-echo sensitive input, reveal/copy safeguards
-- Encrypted backup export/import with integrity verification (`SHA-256` checksum)
+- 🔑 Argon2id key derivation (`m=65536`, `t=3`, `p=1`)
+- 🛡️ ChaCha20-Poly1305 encryption with random 96-bit nonce
+- 💾 Encrypted-at-rest vault storage for SQLite, PostgreSQL, and MongoDB
+- 🔒 OS keyring-backed session key handling (fail-closed behavior)
+- 🧭 Secure CLI UX: hidden prompts, no-echo sensitive input, reveal/copy safeguards
+- 📦 Encrypted backup export/import with integrity verification (`SHA-256` checksum)
 
-## Security Model
+## 🧠 Security Model
 
 - Master password is never persisted.
 - Stored auth bootstrap contains only `salt + verifier + Argon2 parameters`.
@@ -19,7 +19,7 @@ Security-first CLI password manager with zero-knowledge design, client-side encr
 - Session key is stored in OS keyring and removed on logout.
 - Sensitive buffers are zeroized where possible.
 
-## Quick Start
+## 🚀 Quick Start (Cargo)
 
 ```bash
 # Build
@@ -39,17 +39,45 @@ cargo run --bin chacrab -- show <ID_OR_PREFIX>
 cargo run --bin chacrab -- logout
 ```
 
-## Command Reference
+## 🛠️ Makefile Usage
+
+Use Make targets for faster local workflows:
+
+```bash
+# Show all tasks
+make help
+
+# Core quality gates
+make check
+make fmt
+make clippy
+make test-all
+
+# Common CLI flows
+make init
+make login
+make add-password
+make list
+make show ID=<id-or-prefix>
+make logout
+
+# Backend integration helpers
+make docker-up
+make test-backend
+make docker-down
+```
+
+## 📚 Command Reference
 
 - `init` - initialize vault auth metadata
 - `login` / `logout` - start or end secure session
 - `add-password` / `add-note` - create encrypted entries
 - `list` / `show <id-or-prefix>` / `delete <id-or-prefix>` - manage entries
 - `backup-export <path>` / `backup-import <path>` - encrypted backup workflows
-- `sync` - sync engine scaffold command
+- `sync` - perform encrypted bidirectional synchronization
 - `config` - display current runtime configuration
 
-## Global Options
+## ⚙️ Global Options
 
 - `--backend <sqlite|postgres|mongo>`
 - `--database-url <url>`
@@ -58,7 +86,7 @@ cargo run --bin chacrab -- logout
 - `--no-color`
 - `--session-timeout-secs <N>`
 
-## Backend Examples
+## 🗄️ Backend Examples
 
 ```bash
 # SQLite (default)
@@ -71,7 +99,11 @@ cargo run --bin chacrab -- --backend postgres --database-url postgres://chacrab:
 cargo run --bin chacrab -- --backend mongo --database-url mongodb://localhost:27018/chacrab init
 ```
 
-## Encrypted Backup
+After a successful `init`, Chacrab persists the selected `--backend` and `--database-url` in
+`~/.config/chacrab/config.json` (or `CHACRAB_CONFIG_PATH` when set). Later commands reuse this
+config unless you explicitly pass new values.
+
+## 📦 Encrypted Backup
 
 ```bash
 cargo run --bin chacrab -- backup-export ./vault.backup
@@ -81,7 +113,23 @@ cargo run --bin chacrab -- backup-import ./vault.backup
 `backup-export` writes encrypted backup data plus checksum.
 `backup-import` verifies checksum before decrypting and upserting records.
 
-## Integration Testing (Postgres + Mongo)
+## 🔄 Sync
+
+`sync` performs encrypted bidirectional synchronization between the local vault and a remote
+backend configured with environment variables:
+
+- `CHACRAB_SYNC_BACKEND` (`sqlite`, `postgres`, or `mongo`)
+- `CHACRAB_SYNC_DATABASE_URL` (connection URL for the remote backend)
+
+Example:
+
+```bash
+CHACRAB_SYNC_BACKEND=mongo \
+CHACRAB_SYNC_DATABASE_URL=mongodb://localhost:27018/chacrab_sync \
+cargo run --bin chacrab -- sync
+```
+
+## 🧪 Integration Testing (Postgres + Mongo)
 
 ```bash
 # start test infrastructure
@@ -93,7 +141,15 @@ CHACRAB_TEST_MONGO_URL=mongodb://localhost:27018/chacrab \
 cargo test --test backend_selection
 ```
 
-## Development Layout
+## 🧰 Troubleshooting Tips
+
+- 🔐 **Keyring errors (`No active session` / keyring unavailable)**: ensure your OS keyring service is running and unlocked, then run `chacrab login` again.
+- 🗃️ **Backend mismatch after init**: run `chacrab config` to inspect active backend/URL, or pass explicit `--backend` and `--database-url` for one-off commands.
+- 🔄 **Sync configuration errors**: ensure both `CHACRAB_SYNC_BACKEND` and `CHACRAB_SYNC_DATABASE_URL` are set before `chacrab sync`.
+- 🧪 **Backend tests skipped/failing**: verify Postgres/Mongo are up (`make docker-up`) and URLs match expected test env variables.
+- 🧹 **Formatting/lint gate failures**: run `cargo fmt --all` and `cargo clippy --all-targets -- -D warnings` before pushing.
+
+## 🏗️ Development Layout
 
 - `src/bin/main.rs` - binary entrypoint
 - `src/core/` - crypto, models, errors, vault and backup logic
@@ -102,9 +158,17 @@ cargo test --test backend_selection
 - `src/cli/` - parser, commands, prompts, display, session helpers
 - `src/sync/` - sync scaffolding
 
-## Current Scope Notes
+## 📌 Current Scope Notes
 
-- `sync` is currently structural and not yet wired to a production remote transport.
+- `sync` is enabled for encrypted bidirectional transfer between local and configured remote backend.
 - Secret reveal/copy actions are blocked on insecure terminal output (redirected/non-TTY).
+
+## 🏷️ Versioning
+
+- Chacrab follows Semantic Versioning.
+- Release notes and change history are maintained in [CHANGELOG.md](CHANGELOG.md).
+- Required release gates are enforced in CI via [.github/workflows/ci.yml](.github/workflows/ci.yml).
+- Manual release steps are documented in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+- Branch merge requirements for stable releases are documented in [BRANCH_PROTECTION.md](BRANCH_PROTECTION.md).
 
 See `ARCHITECTURE.md` for deep design details and `TODO.md` for next priorities.

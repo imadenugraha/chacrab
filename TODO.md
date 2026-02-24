@@ -47,7 +47,7 @@
 
 ## Priority 4 - UX and Config
 
-- [ ] Persist app config (selected backend, DSN, sync endpoint) in a local config file.
+- [x] Persist app config (selected backend, DSN, sync endpoint) in a local config file.
 - [ ] Improve `config` command to support set/get/reset operations.
 - [ ] Add command to rotate master password (re-encrypt all records).
 - [ ] Add optional non-interactive flags for automation-safe secret input via stdin.
@@ -55,8 +55,8 @@
 
 ## Priority 5 - Operational
 
-- [ ] Add CI pipeline (`cargo check`, `cargo test`, formatting, lint).
+- [x] Add CI pipeline (`cargo check`, `cargo test`, formatting, lint).
 - [ ] Add release profile and binary hardening flags.
 - [ ] Add reproducible local dev environment docs.
 - [ ] Add threat model document with assumptions and non-goals.
-- [ ] Add security regression checklist for each release.
+- [x] Add security regression checklist for each release.

@@ -3,10 +3,11 @@ use uuid::Uuid;
 
 use chacrab::{
     core::{crypto, errors::ChacrabResult, vault::VaultService},
-    storage::{r#trait::VaultRepository, sqlite::SqliteRepository},
+    storage::{sqlite::SqliteRepository, r#trait::VaultRepository},
 };
 
-async fn build_service() -> ChacrabResult<(SqliteRepository, VaultService<SqliteRepository>, [u8; 32])> {
+async fn build_service()
+-> ChacrabResult<(SqliteRepository, VaultService<SqliteRepository>, [u8; 32])> {
     let repo = SqliteRepository::connect("sqlite::memory:").await?;
     repo.init().await?;
     let master = SecretString::new("MasterPass12!".to_owned().into_boxed_str());

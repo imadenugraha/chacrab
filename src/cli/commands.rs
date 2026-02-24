@@ -10,22 +10,22 @@ use crate::{
     auth::login,
     cli::{
         display::{
-            clear_screen, configure_terminal, error as error_msg, is_insecure_terminal, print_header,
-            secure, short_id, success, syncing, system, warning, SessionIndicator, UiOptions,
+            SessionIndicator, UiOptions, clear_screen, configure_terminal, error as error_msg,
+            is_insecure_terminal, print_header, secure, short_id, success, syncing, system,
+            warning,
         },
         parser::{Cli, Commands},
-        prompts,
-        session,
-        table,
+        prompts, runtime_config, session, table,
     },
     core::{
+        backup::{EncryptedBackupFile, export_encrypted, import_encrypted},
         errors::{ChacrabError, ChacrabResult},
         models::VaultItem,
         password_policy,
         vault::VaultService,
-        backup::{export_encrypted, import_encrypted, EncryptedBackupFile},
     },
     storage::{app::AppRepository, r#trait::VaultRepository},
+    sync::sync_engine::SyncEngine,
 };
 
 async fn app_repo(cli: &Cli) -> ChacrabResult<AppRepository> {
@@ -90,7 +90,22 @@ fn parse_or_resolve_id(id_input: &str, items: &[VaultItem]) -> ChacrabResult<Uui
 }
 
 pub async fn run() -> ChacrabResult<()> {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    let args = std::env::args().collect::<Vec<_>>();
+    let backend_explicit = runtime_config::cli_flag_present(&args, "--backend");
+    let database_url_explicit = runtime_config::cli_flag_present(&args, "--database-url");
+
+    if (!backend_explicit || !database_url_explicit)
+        && let Some(saved_config) = runtime_config::load()?
+    {
+        if !backend_explicit {
+            cli.backend = saved_config.backend;
+        }
+        if !database_url_explicit {
+            cli.database_url = saved_config.database_url;
+        }
+    }
+
     let options = ui_options(&cli);
     configure_terminal(options.color);
 
@@ -164,7 +179,16 @@ async fn run_init(
 
     success("Vault initialized successfully.", options);
     system(&format!("Vault ID: {vault_id}"), options);
-    system(&format!("Storage: {}", backend_display(&cli.backend)), options);
+    system(
+        &format!("Storage: {}", backend_display(&cli.backend)),
+        options,
+    );
+
+    runtime_config::save(&runtime_config::RuntimeConfig {
+        backend: cli.backend.clone(),
+        database_url: cli.database_url.clone(),
+    })?;
+
     Ok(())
 }
 
@@ -327,7 +351,10 @@ async fn run_show(
     system("Password: ********", options);
 
     if is_insecure_terminal() {
-        warning("Sensitive actions are blocked on insecure terminal output.", options);
+        warning(
+            "Sensitive actions are blocked on insecure terminal output.",
+            options,
+        );
         password.zeroize();
         return Ok(());
     }
@@ -359,7 +386,10 @@ async fn run_show(
                 clipboard
                     .set_text(password.clone())
                     .map_err(|_| ChacrabError::Config("clipboard write failed".to_owned()))?;
-                success("Password copied. Clearing clipboard in 15 seconds.", options);
+                success(
+                    "Password copied. Clearing clipboard in 15 seconds.",
+                    options,
+                );
                 tokio::time::sleep(Duration::from_secs(15)).await;
                 let _ = clipboard.set_text(String::new());
                 system("Clipboard cleared.", options);
@@ -410,7 +440,10 @@ async fn run_sync(
     session::enforce_timeout(cli.session_timeout_secs)?;
 
     syncing("Syncing encrypted vault...", options);
-    let total = vault.list().await?.len() as u64;
+    let local_count = vault.list().await?.len() as u64;
+    let remote = sync_remote_repo().await?;
+    let remote_count = remote.list_items().await?.len() as u64;
+    let total = (local_count + remote_count).max(1);
 
     if !options.json && !options.quiet {
         let progress = ProgressBar::new(total.max(1));
@@ -425,11 +458,23 @@ async fn run_sync(
         progress.finish_and_clear();
     }
 
+    let report = SyncEngine::sync_bidirectional(vault.repository(), &remote).await?;
     session::touch_session()?;
     success("Sync complete.", options);
-    system("Items uploaded: 0", options);
-    system("Items downloaded: 0", options);
+    system(&format!("Items uploaded: {}", report.uploaded), options);
+    system(&format!("Items downloaded: {}", report.downloaded), options);
     Ok(())
+}
+
+async fn sync_remote_repo() -> ChacrabResult<AppRepository> {
+    let backend = std::env::var("CHACRAB_SYNC_BACKEND")
+        .map_err(|_| ChacrabError::Config("set CHACRAB_SYNC_BACKEND for sync".to_owned()))?;
+    let database_url = std::env::var("CHACRAB_SYNC_DATABASE_URL")
+        .map_err(|_| ChacrabError::Config("set CHACRAB_SYNC_DATABASE_URL for sync".to_owned()))?;
+
+    let repo = AppRepository::connect(&backend, &database_url).await?;
+    repo.init().await?;
+    Ok(repo)
 }
 
 async fn run_backup_export(
@@ -485,7 +530,11 @@ async fn run_backup_import(
     Ok(())
 }
 
-fn run_config(cli: &Cli, options: UiOptions, session_indicator: SessionIndicator) -> ChacrabResult<()> {
+fn run_config(
+    cli: &Cli,
+    options: UiOptions,
+    session_indicator: SessionIndicator,
+) -> ChacrabResult<()> {
     print_header("Configuration", session_indicator, options);
     if options.json {
         let value = json!({
@@ -501,7 +550,10 @@ fn run_config(cli: &Cli, options: UiOptions, session_indicator: SessionIndicator
             serde_json::to_string_pretty(&value).map_err(|_| ChacrabError::Serialization)?
         );
     } else {
-        system(&format!("Backend: {}", backend_display(&cli.backend)), options);
+        system(
+            &format!("Backend: {}", backend_display(&cli.backend)),
+            options,
+        );
         system(&format!("Database URL: {}", cli.database_url), options);
         system(&format!("JSON mode: {}", cli.json), options);
         system(&format!("Quiet mode: {}", cli.quiet), options);

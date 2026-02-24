@@ -3,10 +3,13 @@ use secrecy::SecretString;
 use chacrab::{
     auth::login,
     core::{crypto, errors::ChacrabResult, vault::VaultService},
-    storage::{r#trait::VaultRepository, sqlite::SqliteRepository},
+    storage::{sqlite::SqliteRepository, r#trait::VaultRepository},
 };
 
-async fn session_key(repo: &SqliteRepository, master_password: &SecretString) -> ChacrabResult<[u8; 32]> {
+async fn session_key(
+    repo: &SqliteRepository,
+    master_password: &SecretString,
+) -> ChacrabResult<[u8; 32]> {
     let auth = repo
         .get_auth_record()
         .await?
@@ -38,7 +41,11 @@ async fn sqlite_ciphertext_never_contains_password_or_note_plaintext() -> Chacra
     vault
         .add_note(
             "Private Note".to_owned(),
-            SecretString::new("this should never be plaintext at rest".to_owned().into_boxed_str()),
+            SecretString::new(
+                "this should never be plaintext at rest"
+                    .to_owned()
+                    .into_boxed_str(),
+            ),
             &key,
         )
         .await?;
