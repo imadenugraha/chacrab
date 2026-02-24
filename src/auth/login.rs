@@ -118,7 +118,7 @@ mod tests {
     use crate::{
         core::{
             errors::{ChacrabError, ChacrabResult},
-            models::{AuthRecord, VaultItem},
+            models::{AuthRecord, SyncTombstone, VaultItem},
         },
         storage::r#trait::VaultRepository,
     };
@@ -171,6 +171,18 @@ mod tests {
 
         async fn delete_item(&self, id: Uuid) -> ChacrabResult<()> {
             self.items.lock().expect("poisoned").remove(&id);
+            Ok(())
+        }
+
+        async fn upsert_tombstone(&self, _: &SyncTombstone) -> ChacrabResult<()> {
+            Ok(())
+        }
+
+        async fn list_tombstones(&self) -> ChacrabResult<Vec<SyncTombstone>> {
+            Ok(Vec::new())
+        }
+
+        async fn delete_tombstone(&self, _: Uuid) -> ChacrabResult<()> {
             Ok(())
         }
 
