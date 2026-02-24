@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::{
     core::{
         errors::{ChacrabError, ChacrabResult},
-        models::{AuthRecord, VaultItem},
+        models::{AuthRecord, SyncTombstone, VaultItem},
     },
     storage::{
         mongo::MongoRepository, postgres::PostgresRepository, sqlite::SqliteRepository,
@@ -71,6 +71,30 @@ impl VaultRepository for AppRepository {
             AppRepository::Sqlite(repo) => repo.delete_item(id).await,
             AppRepository::Postgres(repo) => repo.delete_item(id).await,
             AppRepository::Mongo(repo) => repo.delete_item(id).await,
+        }
+    }
+
+    async fn upsert_tombstone(&self, tombstone: &SyncTombstone) -> ChacrabResult<()> {
+        match self {
+            AppRepository::Sqlite(repo) => repo.upsert_tombstone(tombstone).await,
+            AppRepository::Postgres(repo) => repo.upsert_tombstone(tombstone).await,
+            AppRepository::Mongo(repo) => repo.upsert_tombstone(tombstone).await,
+        }
+    }
+
+    async fn list_tombstones(&self) -> ChacrabResult<Vec<SyncTombstone>> {
+        match self {
+            AppRepository::Sqlite(repo) => repo.list_tombstones().await,
+            AppRepository::Postgres(repo) => repo.list_tombstones().await,
+            AppRepository::Mongo(repo) => repo.list_tombstones().await,
+        }
+    }
+
+    async fn delete_tombstone(&self, id: Uuid) -> ChacrabResult<()> {
+        match self {
+            AppRepository::Sqlite(repo) => repo.delete_tombstone(id).await,
+            AppRepository::Postgres(repo) => repo.delete_tombstone(id).await,
+            AppRepository::Mongo(repo) => repo.delete_tombstone(id).await,
         }
     }
 

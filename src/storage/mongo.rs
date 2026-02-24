@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::core::{
     errors::{ChacrabError, ChacrabResult},
-    models::{AuthRecord, VaultItem, VaultItemType},
+    models::{AuthRecord, SyncTombstone, VaultItem, VaultItemType},
 };
 use crate::storage::r#trait::VaultRepository;
 
@@ -19,6 +19,7 @@ const SCHEMA_VERSION: i64 = 1;
 #[derive(Clone)]
 pub struct MongoRepository {
     vault_items: Collection<Document>,
+    sync_tombstones: Collection<Document>,
     auth: Collection<Document>,
     metadata: Collection<Document>,
 }
@@ -37,6 +38,7 @@ impl MongoRepository {
 
         Ok(Self {
             vault_items: database.collection("vault_items"),
+            sync_tombstones: database.collection("sync_tombstones"),
             auth: database.collection("auth"),
             metadata: database.collection("metadata"),
         })
@@ -66,6 +68,7 @@ impl MongoRepository {
             "url": item.url.clone(),
             "encrypted_data": Bson::Binary(Binary { subtype: bson::spec::BinarySubtype::Generic, bytes: item.encrypted_data.clone() }),
             "nonce": Bson::Binary(Binary { subtype: bson::spec::BinarySubtype::Generic, bytes: item.nonce.to_vec() }),
+            "sync_version": item.sync_version as i64,
             "created_at": Bson::DateTime(BsonDateTime::from_millis(item.created_at.timestamp_millis())),
             "updated_at": Bson::DateTime(BsonDateTime::from_millis(item.updated_at.timestamp_millis())),
         }
@@ -111,6 +114,7 @@ impl MongoRepository {
             url: document.get_str("url").ok().map(str::to_owned),
             encrypted_data,
             nonce,
+            sync_version: document.get_i64("sync_version").unwrap_or(1) as u64,
             created_at: Utc
                 .timestamp_millis_opt(created_at)
                 .single()
@@ -131,6 +135,11 @@ impl VaultRepository for MongoRepository {
             .options(IndexOptions::builder().unique(true).build())
             .build();
         self.vault_items.create_index(unique_index).await?;
+        let tombstone_index = IndexModel::builder()
+            .keys(doc! { "id": 1 })
+            .options(IndexOptions::builder().unique(true).build())
+            .build();
+        self.sync_tombstones.create_index(tombstone_index).await?;
 
         self.metadata
             .update_one(
@@ -183,6 +192,57 @@ impl VaultRepository for MongoRepository {
         if result.deleted_count == 0 {
             return Err(ChacrabError::NotFound);
         }
+        Ok(())
+    }
+
+    async fn upsert_tombstone(&self, tombstone: &SyncTombstone) -> ChacrabResult<()> {
+        self.sync_tombstones
+            .update_one(
+                doc! { "id": tombstone.id.to_string() },
+                doc! {
+                    "$set": {
+                        "id": tombstone.id.to_string(),
+                        "deleted_at": Bson::DateTime(BsonDateTime::from_millis(tombstone.deleted_at.timestamp_millis())),
+                        "sync_version": tombstone.sync_version as i64,
+                    }
+                },
+            )
+            .upsert(true)
+            .await?;
+        Ok(())
+    }
+
+    async fn list_tombstones(&self) -> ChacrabResult<Vec<SyncTombstone>> {
+        let mut cursor = self
+            .sync_tombstones
+            .find(doc! {})
+            .sort(doc! { "deleted_at": -1 })
+            .await?;
+
+        let mut out = Vec::new();
+        while let Some(document) = cursor.try_next().await? {
+            let id_text = document.get_str("id").map_err(|_| ChacrabError::Storage)?;
+            let deleted_at = document
+                .get_datetime("deleted_at")
+                .map_err(|_| ChacrabError::Storage)?
+                .timestamp_millis();
+            let sync_version = document.get_i64("sync_version").unwrap_or(1) as u64;
+            out.push(SyncTombstone {
+                id: Uuid::parse_str(id_text).map_err(|_| ChacrabError::Storage)?,
+                deleted_at: Utc
+                    .timestamp_millis_opt(deleted_at)
+                    .single()
+                    .ok_or(ChacrabError::Storage)?,
+                sync_version,
+            });
+        }
+        Ok(out)
+    }
+
+    async fn delete_tombstone(&self, id: Uuid) -> ChacrabResult<()> {
+        self.sync_tombstones
+            .delete_one(doc! { "id": id.to_string() })
+            .await?;
         Ok(())
     }
 

@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::core::{
     errors::{ChacrabError, ChacrabResult},
-    models::{AuthRecord, VaultItem, VaultItemType},
+    models::{AuthRecord, SyncTombstone, VaultItem, VaultItemType},
 };
 use crate::storage::r#trait::VaultRepository;
 
@@ -81,8 +81,26 @@ impl VaultRepository for PostgresRepository {
                 url TEXT NULL,
                 encrypted_data BYTEA NOT NULL,
                 nonce BYTEA NOT NULL,
+                sync_version BIGINT NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "ALTER TABLE vault_items
+             ADD COLUMN IF NOT EXISTS sync_version BIGINT NOT NULL DEFAULT 1",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS sync_tombstones (
+                id TEXT PRIMARY KEY,
+                deleted_at TEXT NOT NULL,
+                sync_version BIGINT NOT NULL
             )",
         )
         .execute(&self.pool)
@@ -93,8 +111,8 @@ impl VaultRepository for PostgresRepository {
 
     async fn upsert_item(&self, item: &VaultItem) -> ChacrabResult<()> {
         sqlx::query(
-            "INSERT INTO vault_items (id, item_type, title, username, url, encrypted_data, nonce, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                "INSERT INTO vault_items (id, item_type, title, username, url, encrypted_data, nonce, sync_version, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT(id) DO UPDATE SET
                 item_type = EXCLUDED.item_type,
                 title = EXCLUDED.title,
@@ -102,6 +120,7 @@ impl VaultRepository for PostgresRepository {
                 url = EXCLUDED.url,
                 encrypted_data = EXCLUDED.encrypted_data,
                 nonce = EXCLUDED.nonce,
+                     sync_version = EXCLUDED.sync_version,
                 created_at = EXCLUDED.created_at,
                 updated_at = EXCLUDED.updated_at",
         )
@@ -112,6 +131,7 @@ impl VaultRepository for PostgresRepository {
         .bind(&item.url)
         .bind(&item.encrypted_data)
         .bind(item.nonce.to_vec())
+        .bind(item.sync_version as i64)
         .bind(item.created_at.to_rfc3339())
         .bind(item.updated_at.to_rfc3339())
         .execute(&self.pool)
@@ -121,7 +141,7 @@ impl VaultRepository for PostgresRepository {
 
     async fn list_items(&self) -> ChacrabResult<Vec<VaultItem>> {
         let rows = sqlx::query(
-            "SELECT id, item_type, title, username, url, encrypted_data, nonce, created_at, updated_at
+            "SELECT id, item_type, title, username, url, encrypted_data, nonce, sync_version, created_at, updated_at
              FROM vault_items ORDER BY updated_at DESC",
         )
         .fetch_all(&self.pool)
@@ -155,6 +175,7 @@ impl VaultRepository for PostgresRepository {
                     url: row.try_get("url")?,
                     encrypted_data: row.try_get("encrypted_data")?,
                     nonce,
+                    sync_version: row.try_get::<i64, _>("sync_version")? as u64,
                     created_at,
                     updated_at,
                 })
@@ -164,7 +185,7 @@ impl VaultRepository for PostgresRepository {
 
     async fn get_item(&self, id: Uuid) -> ChacrabResult<VaultItem> {
         let row = sqlx::query(
-            "SELECT id, item_type, title, username, url, encrypted_data, nonce, created_at, updated_at
+            "SELECT id, item_type, title, username, url, encrypted_data, nonce, sync_version, created_at, updated_at
              FROM vault_items WHERE id = $1",
         )
         .bind(id.to_string())
@@ -197,6 +218,7 @@ impl VaultRepository for PostgresRepository {
             url: row.try_get("url")?,
             encrypted_data: row.try_get("encrypted_data")?,
             nonce,
+            sync_version: row.try_get::<i64, _>("sync_version")? as u64,
             created_at,
             updated_at,
         })
@@ -211,6 +233,54 @@ impl VaultRepository for PostgresRepository {
         if result.rows_affected() == 0 {
             return Err(ChacrabError::NotFound);
         }
+        Ok(())
+    }
+
+    async fn upsert_tombstone(&self, tombstone: &SyncTombstone) -> ChacrabResult<()> {
+        sqlx::query(
+            "INSERT INTO sync_tombstones (id, deleted_at, sync_version)
+             VALUES ($1, $2, $3)
+             ON CONFLICT(id) DO UPDATE SET
+               deleted_at = EXCLUDED.deleted_at,
+               sync_version = EXCLUDED.sync_version",
+        )
+        .bind(tombstone.id.to_string())
+        .bind(tombstone.deleted_at.to_rfc3339())
+        .bind(tombstone.sync_version as i64)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn list_tombstones(&self) -> ChacrabResult<Vec<SyncTombstone>> {
+        let rows = sqlx::query(
+            "SELECT id, deleted_at, sync_version FROM sync_tombstones ORDER BY deleted_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|row| {
+                let id_text: String = row.try_get("id")?;
+                let deleted_at_text: String = row.try_get("deleted_at")?;
+                let deleted_at = DateTime::parse_from_rfc3339(&deleted_at_text)
+                    .map_err(|_| ChacrabError::Storage)?
+                    .with_timezone(&Utc);
+
+                Ok(SyncTombstone {
+                    id: Uuid::parse_str(&id_text).map_err(|_| ChacrabError::Storage)?,
+                    deleted_at,
+                    sync_version: row.try_get::<i64, _>("sync_version")? as u64,
+                })
+            })
+            .collect::<Result<Vec<_>, ChacrabError>>()
+    }
+
+    async fn delete_tombstone(&self, id: Uuid) -> ChacrabResult<()> {
+        sqlx::query("DELETE FROM sync_tombstones WHERE id = $1")
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
