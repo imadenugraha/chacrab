@@ -120,12 +120,22 @@ backend configured with environment variables:
 
 - `CHACRAB_SYNC_BACKEND` (`sqlite`, `postgres`, or `mongo`)
 - `CHACRAB_SYNC_DATABASE_URL` (connection URL for the remote backend)
+- `CHACRAB_SYNC_AUTH_TOKEN` (required for non-sqlite sync targets, min 16 chars)
+- `CHACRAB_SYNC_REQUIRE_TLS` (`true` by default; set `false` only for local/dev)
+
+Sync conflict handling is deterministic and version-aware:
+
+- higher `sync_version` always wins,
+- ties resolve by timestamp, then tombstones (delete-wins),
+- stale remote updates are rejected by replay protection,
+- CLI shows `⚠️` conflict/replay summaries with short IDs only.
 
 Example:
 
 ```bash
 CHACRAB_SYNC_BACKEND=mongo \
-CHACRAB_SYNC_DATABASE_URL=mongodb://localhost:27018/chacrab_sync \
+CHACRAB_SYNC_DATABASE_URL=mongodb://localhost:27018/chacrab_sync?tls=true \
+CHACRAB_SYNC_AUTH_TOKEN=replace-with-long-random-token \
 cargo run --bin chacrab -- sync
 ```
 
@@ -145,7 +155,7 @@ cargo test --test backend_selection
 
 - 🔐 **Keyring errors (`No active session` / keyring unavailable)**: ensure your OS keyring service is running and unlocked, then run `chacrab login` again.
 - 🗃️ **Backend mismatch after init**: run `chacrab config` to inspect active backend/URL, or pass explicit `--backend` and `--database-url` for one-off commands.
-- 🔄 **Sync configuration errors**: ensure both `CHACRAB_SYNC_BACKEND` and `CHACRAB_SYNC_DATABASE_URL` are set before `chacrab sync`.
+- 🔄 **Sync configuration errors**: ensure `CHACRAB_SYNC_BACKEND`, `CHACRAB_SYNC_DATABASE_URL`, and `CHACRAB_SYNC_AUTH_TOKEN` (non-sqlite) are set, and TLS is enabled unless explicitly disabled for local development.
 - 🧪 **Backend tests skipped/failing**: verify Postgres/Mongo are up (`make docker-up`) and URLs match expected test env variables.
 - 🧹 **Formatting/lint gate failures**: run `cargo fmt --all` and `cargo clippy --all-targets -- -D warnings` before pushing.
 
