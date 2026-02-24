@@ -5,16 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on Keep a Changelog,
 and this project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [1.1.0] - 2026-02-24
 
 ### Added
-- Placeholder section for upcoming features.
+- Sync tombstone model and repository API for delete propagation across backends.
+- Deterministic sync conflict reporting with short-ID summaries in CLI output.
+- Replay-protection counters in sync reports for stale remote update rejection.
 
 ### Changed
-- Placeholder section for behavior changes.
+- Sync engine now resolves item/delete conflicts using version-first deterministic policy.
+- `delete` now records sync tombstones with incremented sync version metadata.
+- Remote sync adapter now validates backend URL transport constraints and auth token policy.
 
 ### Fixed
-- Placeholder section for bug fixes.
+- Mongo/SQLite/Postgres sync state handling now includes `sync_version` for conflict-safe merges.
 
 ## [1.0.0] - 2026-02-24
 
