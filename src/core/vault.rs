@@ -8,7 +8,7 @@ use crate::{
     core::{
         crypto,
         errors::ChacrabResult,
-        models::{EncryptedPayload, NewVaultItem, VaultItem, VaultItemType},
+        models::{EncryptedPayload, NewVaultItem, SyncTombstone, VaultItem, VaultItemType},
     },
     storage::r#trait::VaultRepository,
 };
@@ -83,6 +83,7 @@ impl<R: VaultRepository> VaultService<R> {
             url: new_item.url,
             encrypted_data: encrypted.ciphertext,
             nonce: encrypted.nonce,
+            sync_version: 1,
             created_at: now,
             updated_at: now,
         };
@@ -107,7 +108,26 @@ impl<R: VaultRepository> VaultService<R> {
     }
 
     pub async fn delete(&self, id: Uuid) -> ChacrabResult<()> {
-        self.repository.delete_item(id).await
+        let next_sync_version = match self.repository.get_item(id).await {
+            Ok(item) => item.sync_version.saturating_add(1),
+            Err(_) => self
+                .repository
+                .list_tombstones()
+                .await?
+                .into_iter()
+                .find(|entry| entry.id == id)
+                .map(|entry| entry.sync_version.saturating_add(1))
+                .unwrap_or(1),
+        };
+
+        self.repository.delete_item(id).await?;
+        self.repository
+            .upsert_tombstone(&SyncTombstone {
+                id,
+                deleted_at: Utc::now(),
+                sync_version: next_sync_version,
+            })
+            .await
     }
 
     pub fn repository(&self) -> &R {

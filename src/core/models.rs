@@ -19,8 +19,22 @@ pub struct VaultItem {
     pub url: Option<String>,
     pub encrypted_data: Vec<u8>,
     pub nonce: [u8; 12],
+    #[serde(default = "default_sync_version")]
+    pub sync_version: u64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyncTombstone {
+    pub id: Uuid,
+    pub deleted_at: DateTime<Utc>,
+    #[serde(default = "default_sync_version")]
+    pub sync_version: u64,
+}
+
+fn default_sync_version() -> u64 {
+    1
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
