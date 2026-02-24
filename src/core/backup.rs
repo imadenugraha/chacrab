@@ -1,4 +1,4 @@
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -26,7 +26,10 @@ pub struct EncryptedBackupFile {
     pub checksum_hex: String,
 }
 
-pub fn export_encrypted(items: Vec<VaultItem>, key: &[u8; crypto::KEY_SIZE]) -> ChacrabResult<EncryptedBackupFile> {
+pub fn export_encrypted(
+    items: Vec<VaultItem>,
+    key: &[u8; crypto::KEY_SIZE],
+) -> ChacrabResult<EncryptedBackupFile> {
     let payload = BackupPayload {
         schema_version: BACKUP_FORMAT_VERSION,
         exported_at: Utc::now().to_rfc3339(),
@@ -54,7 +57,9 @@ pub fn import_encrypted(
     key: &[u8; crypto::KEY_SIZE],
 ) -> ChacrabResult<BackupPayload> {
     if backup_file.format_version != BACKUP_FORMAT_VERSION {
-        return Err(ChacrabError::Config("unsupported backup format version".to_owned()));
+        return Err(ChacrabError::Config(
+            "unsupported backup format version".to_owned(),
+        ));
     }
 
     let nonce_bytes = STANDARD
@@ -78,8 +83,10 @@ pub fn import_encrypted(
 
     let mut nonce = [0u8; crypto::NONCE_SIZE];
     nonce.copy_from_slice(&nonce_bytes);
-    let plaintext = crypto::decrypt(key, &nonce, &ciphertext)?;
+    let mut plaintext = crypto::decrypt(key, &nonce, &ciphertext)?;
 
-    let payload: BackupPayload = serde_json::from_slice(&plaintext)?;
-    Ok(payload)
+    let payload_result: ChacrabResult<BackupPayload> =
+        serde_json::from_slice(&plaintext).map_err(Into::into);
+    crypto::zeroize_vec(&mut plaintext);
+    payload_result
 }

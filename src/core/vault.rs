@@ -32,13 +32,16 @@ impl<R: VaultRepository> VaultService<R> {
         key: &[u8; crypto::KEY_SIZE],
     ) -> ChacrabResult<VaultItem> {
         let payload = EncryptedPayload::for_password(password, notes);
-        self.add_item(NewVaultItem {
-            r#type: VaultItemType::Password,
-            title,
-            username,
-            url,
-            payload,
-        }, key)
+        self.add_item(
+            NewVaultItem {
+                r#type: VaultItemType::Password,
+                title,
+                username,
+                url,
+                payload,
+            },
+            key,
+        )
         .await
     }
 
@@ -49,17 +52,24 @@ impl<R: VaultRepository> VaultService<R> {
         key: &[u8; crypto::KEY_SIZE],
     ) -> ChacrabResult<VaultItem> {
         let payload = EncryptedPayload::for_note(notes);
-        self.add_item(NewVaultItem {
-            r#type: VaultItemType::Note,
-            title,
-            username: None,
-            url: None,
-            payload,
-        }, key)
+        self.add_item(
+            NewVaultItem {
+                r#type: VaultItemType::Note,
+                title,
+                username: None,
+                url: None,
+                payload,
+            },
+            key,
+        )
         .await
     }
 
-    async fn add_item(&self, new_item: NewVaultItem, key: &[u8; crypto::KEY_SIZE]) -> ChacrabResult<VaultItem> {
+    async fn add_item(
+        &self,
+        new_item: NewVaultItem,
+        key: &[u8; crypto::KEY_SIZE],
+    ) -> ChacrabResult<VaultItem> {
         let mut serialized = serde_json::to_vec(&new_item.payload)?;
         let encrypted = crypto::encrypt(key, &serialized)?;
         crypto::zeroize_vec(&mut serialized);
