@@ -10,6 +10,32 @@
 
 ## Layered Modules
 
+## Application Diagram
+
+```mermaid
+flowchart TD
+  U[User / Terminal] --> CLI[CLI Layer\nsrc/cli]
+
+  CLI --> AUTH[Auth Layer\nsrc/auth]
+  CLI --> CORE[Core Domain Layer\nsrc/core]
+  CLI --> SYNC[Sync Layer\nsrc/sync]
+
+  AUTH --> KR[(OS Keyring)]
+  AUTH --> STORE
+
+  CORE --> STORE[Storage Abstraction\nsrc/storage/trait.rs]
+  SYNC --> STORE
+
+  STORE --> SQLITE[(SQLite)]
+  STORE --> POSTGRES[(PostgreSQL)]
+  STORE --> MONGO[(MongoDB)]
+
+  CORE --> ENC[Encrypted Payload\nChaCha20-Poly1305]
+  ENC --> SQLITE
+  ENC --> POSTGRES
+  ENC --> MONGO
+```
+
 ## 1) CLI Layer (`src/cli`)
 
 - `parser.rs`: `clap` command + argument definitions
