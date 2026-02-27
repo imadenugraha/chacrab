@@ -48,11 +48,11 @@
 ## Priority 4 - UX and Config
 
 - [x] Persist app config (selected backend, DSN, sync endpoint) in a local config file.
+- [x] Add update command for modifying existing records with secure input and audit trail.
 - [ ] Improve `config` command to support set/get/reset operations.
 - [ ] Add command to rotate master password (re-encrypt all records).
 - [ ] Add optional non-interactive flags for automation-safe secret input via stdin.
 - [ ] Add clipboard disable toggle in config for hardened environments.
-- [ ] Add edit command for modifying existing records with secure input and audit trail.
 
 ## Priority 5 - Operational
 
