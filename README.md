@@ -34,6 +34,10 @@ cargo run --bin chacrab -- add-password
 cargo run --bin chacrab -- add-note
 cargo run --bin chacrab -- list
 
+# Update existing entries
+cargo run --bin chacrab -- update password --id <ID>
+cargo run --bin chacrab -- update secret-notes --label <LABEL>
+
 # Show and logout
 cargo run --bin chacrab -- show <ID_OR_PREFIX>
 cargo run --bin chacrab -- logout
@@ -57,6 +61,8 @@ make test-all
 make init
 make login
 make add-password
+make update-password ID=<id-or-prefix>
+make update-secret-notes LABEL=<label>
 make list
 make show ID=<id-or-prefix>
 make logout
@@ -72,10 +78,28 @@ make docker-down
 - `init` - initialize vault auth metadata
 - `login` / `logout` - start or end secure session
 - `add-password` / `add-note` - create encrypted entries
+- `update password --id <id>|--label <label>` - update an existing password entry via secure prompts
+- `update secret-notes --id <id>|--label <label>` - update an existing secure note via secure prompts
 - `list` / `show <id-or-prefix>` / `delete <id-or-prefix>` - manage entries
 - `backup-export <path>` / `backup-import <path>` - encrypted backup workflows
 - `sync` - perform encrypted bidirectional synchronization
 - `config` - display current runtime configuration
+
+## ✏️ Update Examples
+
+```bash
+# CLI: update password by ID
+cargo run --bin chacrab -- update password --id 9b3baf21
+
+# CLI: update secure note by label
+cargo run --bin chacrab -- update secret-notes --label "Personal recovery codes"
+
+# Makefile wrappers
+make update-password ID=9b3baf21
+make update-secret-notes LABEL="Personal recovery codes"
+```
+
+If multiple items share the same label/title, use `--id` (or `ID=...` in Makefile) to avoid an ambiguous selection error.
 
 ## ⚙️ Global Options
 
@@ -179,6 +203,7 @@ cargo test --test backend_selection
 - Release notes and change history are maintained in [CHANGELOG.md](CHANGELOG.md).
 - Required release gates are enforced in CI via [.github/workflows/ci.yml](.github/workflows/ci.yml).
 - Manual release steps are documented in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+- Security findings and remediation tracking are maintained in [SECURITY_AUDIT.md](SECURITY_AUDIT.md).
 - Branch merge requirements for stable releases are documented in [BRANCH_PROTECTION.md](BRANCH_PROTECTION.md).
 
 See `ARCHITECTURE.md` for deep design details and `TODO.md` for next priorities.
