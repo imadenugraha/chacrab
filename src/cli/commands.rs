@@ -14,13 +14,13 @@ use crate::{
             is_insecure_terminal, print_header, secure, short_id, success, syncing, system,
             warning,
         },
-        parser::{Cli, Commands},
+        parser::{Cli, Commands, UpdateCommands, UpdateSelector},
         prompts, runtime_config, session, table,
     },
     core::{
         backup::{EncryptedBackupFile, export_encrypted, import_encrypted},
         errors::{ChacrabError, ChacrabResult},
-        models::VaultItem,
+        models::{VaultItem, VaultItemType},
         password_policy,
         vault::VaultService,
     },
@@ -59,6 +59,12 @@ fn map_user_error(err: &ChacrabError) -> &'static str {
         ChacrabError::Config(message) if message == "confirmation text did not match title" => {
             "Confirmation text did not match title."
         }
+        ChacrabError::Config(message) if message == "ambiguous item label" => {
+            "Ambiguous label. Use --id or a unique label."
+        }
+        ChacrabError::Config(message) if message == "item type mismatch for update" => {
+            "Update target does not match item type."
+        }
         ChacrabError::Config(_) => "Invalid configuration or input.",
         ChacrabError::KeyringLocked => "Secure keyring is locked. Unlock your keyring and retry.",
         ChacrabError::KeyringUnavailable => "Secure keyring unavailable. Unlock keyring and retry.",
@@ -87,6 +93,33 @@ fn parse_or_resolve_id(id_input: &str, items: &[VaultItem]) -> ChacrabResult<Uui
     }
 
     Ok(first)
+}
+
+fn parse_or_resolve_selector(selector: &UpdateSelector, items: &[VaultItem]) -> ChacrabResult<Uuid> {
+    if let Some(id) = selector.id.as_deref() {
+        return parse_or_resolve_id(id, items);
+    }
+
+    if let Some(label) = selector.label.as_deref() {
+        let mut matches = items
+            .iter()
+            .filter(|item| item.title == label)
+            .map(|item| item.id);
+
+        let Some(first) = matches.next() else {
+            return Err(ChacrabError::NotFound);
+        };
+
+        if matches.next().is_some() {
+            return Err(ChacrabError::Config("ambiguous item label".to_owned()));
+        }
+
+        return Ok(first);
+    }
+
+    Err(ChacrabError::Config(
+        "either --id or --label is required".to_owned(),
+    ))
 }
 
 pub async fn run() -> ChacrabResult<()> {
@@ -133,6 +166,9 @@ pub async fn run() -> ChacrabResult<()> {
         Commands::List => run_list(&vault, &cli, options, session_indicator).await,
         Commands::Show { id } => run_show(&vault, &cli, options, session_indicator, id).await,
         Commands::Delete { id } => run_delete(&vault, &cli, options, session_indicator, id).await,
+        Commands::Update { target } => {
+            run_update(&vault, &cli, options, session_indicator, target).await
+        }
         Commands::BackupExport { path } => {
             run_backup_export(&vault, &cli, options, session_indicator, path).await
         }
@@ -427,6 +463,108 @@ async fn run_delete(
     vault.delete(resolved_id).await?;
     session::touch_session()?;
     success("Item deleted permanently.", options);
+    Ok(())
+}
+
+async fn run_update(
+    vault: &VaultService<AppRepository>,
+    cli: &Cli,
+    options: UiOptions,
+    session_indicator: SessionIndicator,
+    target: &UpdateCommands,
+) -> ChacrabResult<()> {
+    match target {
+        UpdateCommands::Password(selector) => {
+            run_update_password(vault, cli, options, session_indicator, selector).await
+        }
+        UpdateCommands::SecretNotes(selector) => {
+            run_update_secret_notes(vault, cli, options, session_indicator, selector).await
+        }
+    }
+}
+
+async fn run_update_password(
+    vault: &VaultService<AppRepository>,
+    cli: &Cli,
+    options: UiOptions,
+    session_indicator: SessionIndicator,
+    selector: &UpdateSelector,
+) -> ChacrabResult<()> {
+    print_header("Update Credential", session_indicator, options);
+    session::enforce_timeout(cli.session_timeout_secs)?;
+
+    let all_items = vault.list().await?;
+    let resolved_id = parse_or_resolve_selector(selector, &all_items)?;
+    let existing = vault.repository().get_item(resolved_id).await?;
+    if existing.r#type != VaultItemType::Password {
+        return Err(ChacrabError::Config(
+            "item type mismatch for update".to_owned(),
+        ));
+    }
+
+    let title = prompts::optional_input(&format!(
+        "Title (leave blank to keep: {})",
+        existing.title
+    ))?;
+    let username = prompts::optional_input(&format!(
+        "Username/Email (leave blank to keep: {})",
+        existing.username.clone().unwrap_or_else(|| "-".to_owned())
+    ))?;
+    let url = prompts::optional_input(&format!(
+        "URL (leave blank to keep: {})",
+        existing.url.clone().unwrap_or_else(|| "-".to_owned())
+    ))?;
+    secure("Enter new password (leave empty to keep current):", options);
+    let password = prompts::optional_secure_password_prompt("New password: ")?;
+    let notes = prompts::multiline("Notes (save empty content to clear, cancel editor to keep)")?;
+
+    let mut key = login::current_session_key()?;
+    let item = vault
+        .update_password(resolved_id, title, username, url, password, notes.map(Some), &key)
+        .await?;
+    key.zeroize();
+    session::touch_session()?;
+
+    success("Credential updated securely.", options);
+    system(&format!("ID: {}", short_id(&item.id.to_string())), options);
+    Ok(())
+}
+
+async fn run_update_secret_notes(
+    vault: &VaultService<AppRepository>,
+    cli: &Cli,
+    options: UiOptions,
+    session_indicator: SessionIndicator,
+    selector: &UpdateSelector,
+) -> ChacrabResult<()> {
+    print_header("Update Secure Note", session_indicator, options);
+    session::enforce_timeout(cli.session_timeout_secs)?;
+
+    let all_items = vault.list().await?;
+    let resolved_id = parse_or_resolve_selector(selector, &all_items)?;
+    let existing = vault.repository().get_item(resolved_id).await?;
+    if existing.r#type != VaultItemType::Note {
+        return Err(ChacrabError::Config(
+            "item type mismatch for update".to_owned(),
+        ));
+    }
+
+    let title = prompts::optional_input(&format!(
+        "Title (leave blank to keep: {})",
+        existing.title
+    ))?;
+    let note = prompts::multiline("Content (multiline, cancel editor to keep current)")?;
+    let notes_secret = note.map(|content| SecretString::new(content.into_boxed_str()));
+
+    let mut key = login::current_session_key()?;
+    let item = vault
+        .update_note(resolved_id, title, notes_secret, &key)
+        .await?;
+    key.zeroize();
+    session::touch_session()?;
+
+    success("Secure note updated.", options);
+    system(&format!("ID: {}", short_id(&item.id.to_string())), options);
     Ok(())
 }
 
