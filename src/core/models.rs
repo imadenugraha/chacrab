@@ -41,6 +41,7 @@ fn default_sync_version() -> u64 {
 pub struct EncryptedPayload {
     pub password: Option<String>,
     pub notes: Option<String>,
+    #[serde(default)]
     pub custom_fields: serde_json::Map<String, serde_json::Value>,
 }
 
