@@ -24,6 +24,19 @@ pub fn secure_password_prompt(prompt: &str) -> ChacrabResult<SecretString> {
     Ok(SecretString::new(password.into_boxed_str()))
 }
 
+pub fn optional_secure_password_prompt(prompt: &str) -> ChacrabResult<Option<SecretString>> {
+    print!("{}", prompt);
+    io::stdout()
+        .flush()
+        .map_err(|_| ChacrabError::Config("unable to flush output".to_owned()))?;
+    let password = rpassword::read_password()
+        .map_err(|_| ChacrabError::Config("unable to read password".to_owned()))?;
+    if password.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(SecretString::new(password.into_boxed_str())))
+}
+
 pub fn secure_password_with_confirmation(
     prompt: &str,
     confirm_prompt: &str,
