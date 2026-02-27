@@ -63,3 +63,66 @@ async fn show_missing_item_fails() -> ChacrabResult<()> {
     assert!(result.is_err());
     Ok(())
 }
+
+#[tokio::test]
+async fn update_password_updates_secret_and_audit_trail() -> ChacrabResult<()> {
+    let (_repo, service, key) = build_service().await?;
+    let item = service
+        .add_password(
+            "Email".to_owned(),
+            Some("me@example.com".to_owned()),
+            None,
+            SecretString::new("old-secret".to_owned().into_boxed_str()),
+            Some("initial".to_owned()),
+            &key,
+        )
+        .await?;
+
+    let updated = service
+        .update_password(
+            item.id,
+            Some("Email Primary".to_owned()),
+            None,
+            None,
+            Some(SecretString::new("new-secret".to_owned().into_boxed_str())),
+            Some(Some("rotated".to_owned())),
+            &key,
+        )
+        .await?;
+
+    assert_eq!(updated.sync_version, item.sync_version + 1);
+    let (_stored, payload) = service.show_decrypted(item.id, &key).await?;
+    assert_eq!(payload["password"].as_str(), Some("new-secret"));
+    assert_eq!(payload["notes"].as_str(), Some("rotated"));
+    assert_eq!(payload["custom_fields"]["_audit"][0]["action"], "update_password");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn update_note_updates_content_and_audit_trail() -> ChacrabResult<()> {
+    let (_repo, service, key) = build_service().await?;
+    let item = service
+        .add_note(
+            "Recovery".to_owned(),
+            SecretString::new("backup-codes".to_owned().into_boxed_str()),
+            &key,
+        )
+        .await?;
+
+    let updated = service
+        .update_note(
+            item.id,
+            Some("Recovery Codes".to_owned()),
+            Some(SecretString::new("new-codes".to_owned().into_boxed_str())),
+            &key,
+        )
+        .await?;
+
+    assert_eq!(updated.sync_version, item.sync_version + 1);
+    let (_stored, payload) = service.show_decrypted(item.id, &key).await?;
+    assert_eq!(payload["notes"].as_str(), Some("new-codes"));
+    assert_eq!(payload["custom_fields"]["_audit"][0]["action"], "update_note");
+
+    Ok(())
+}
