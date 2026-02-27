@@ -5,7 +5,7 @@ DOCKER_COMPOSE := docker compose
 POSTGRES_URL := postgres://chacrab:chacrab@localhost:5433/chacrab
 MONGO_URL := mongodb://localhost:27018/chacrab
 
-.PHONY: help check build test test-all test-backend fmt clippy run init login logout list add-password add-note show delete backup-export backup-import docker-up docker-down docker-logs clean
+.PHONY: help check build test test-all test-backend fmt clippy run init login logout list add-password add-note update-password update-secret-notes show delete backup-export backup-import docker-up docker-down docker-logs clean
 
 help:
 	@echo "Chacrab Make targets"
@@ -27,6 +27,8 @@ help:
 	@echo "  make list            - list items"
 	@echo "  make add-password    - add password item"
 	@echo "  make add-note        - add secure note"
+	@echo "  make update-password ID=<id>|LABEL=<label>"
+	@echo "  make update-secret-notes ID=<id>|LABEL=<label>"
 	@echo "  make show ID=<id>    - show item by id/prefix"
 	@echo "  make delete ID=<id>  - delete item by id/prefix"
 	@echo "  make backup-export PATH=./vault.backup"
@@ -76,6 +78,24 @@ add-password:
 
 add-note:
 	cargo run --bin $(BINARY) -- add-note
+
+update-password:
+	@if [ -n "$(ID)" ]; then \
+		cargo run --bin $(BINARY) -- update password --id "$(ID)"; \
+	elif [ -n "$(LABEL)" ]; then \
+		cargo run --bin $(BINARY) -- update password --label "$(LABEL)"; \
+	else \
+		echo "Usage: make update-password ID=<id> | LABEL=<label>"; exit 1; \
+	fi
+
+update-secret-notes:
+	@if [ -n "$(ID)" ]; then \
+		cargo run --bin $(BINARY) -- update secret-notes --id "$(ID)"; \
+	elif [ -n "$(LABEL)" ]; then \
+		cargo run --bin $(BINARY) -- update secret-notes --label "$(LABEL)"; \
+	else \
+		echo "Usage: make update-secret-notes ID=<id> | LABEL=<label>"; exit 1; \
+	fi
 
 show:
 	@if [ -z "$(ID)" ]; then echo "Usage: make show ID=<id-or-prefix>"; exit 1; fi
